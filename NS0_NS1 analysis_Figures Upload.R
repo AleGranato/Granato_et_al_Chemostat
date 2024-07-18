@@ -582,8 +582,50 @@ pseudo_log10_trans = function (sigma = 1, base = 10){
 # with ~linear behaviour between -2*sigma and 2*sigma, (~ y = 0.1913878/sigma * x) (slope = asinh(1)/(log(10)*2))
 # with ~0.4 scale units between -sigma and sigma
 
+# ==== DECIPHER_clusterASVs function ====
+library("DECIPHER")
+DECIPHER_clusterASVs = function(seqs,
+                                identityCutoff = 1,
+                                testBounds = FALSE, upperBound = 1, lowerBound = 1, testIncrement = 0.1,
+                                ncores = NULL){
+  
+  # detect cores; uses all cores if ncores = NULL
+  if(is.null(ncores)){
+    ncores <- detectCores()
+  }
+  
+  dna <- Biostrings::DNAStringSet(seqs)
+  
+  # align sequences and calculate distance matrix
+  cat("Aligning sequences...\n")
+  aln <- DECIPHER::AlignSeqs(dna, processors = ncores)
+  cat("Calculating distance matrix...\n")
+  dmat <- DECIPHER::DistanceMatrix(aln, processors = ncores)
+  
+  if(!testBounds){
+    cat(paste0("Clustering at ",identityCutoff * 100,"% identity...\n"))
+    clusters <- DECIPHER::TreeLine(
+      myDistMatrix = dmat,
+      method = "complete",
+      cutoff = 1-identityCutoff, # use cutoff = 0.03 for a 97% OTU
+      type = "clusters",
+      processors = ncores)
+    
+  }else{
+    cat(paste0("Clustering between",lowerBound*100,"-",upperBound*100,"% identity, incrementing by ",testIncrement*100,"%...\n"))
+    clusters <- DECIPHER::TreeLine(
+      myDistMatrix=dmat,
+      method = "complete",
+      cutoff = 1-seq(lowerBound, upperBound, by = testIncrement),
+      type = "clusters",
+      processors = ncores)
+  }
+  return(clusters)
+}
+
 # ==== Loading ASV table ====
-path <- "./Alessandra_16s/NS0_NS1 analysis/"
+setwd("~/Desktop/Christopher_Yau/R Data Analysis/Dada2/Alessandra_16s/NS0_NS1 analysis")
+path <- "."
 
 sampleNum = 50
 sample_isoNum = 56
@@ -601,11 +643,30 @@ ASV_TableRelAb[,12:(sample_isoNum+12-1)] = colwise(function(x) x/sum(x))(ASV_Tab
 # ASV_TableRelAbSave = ASV_TableRelAb
 # write.table(ASV_TableRelAb,file = paste0(path,"/NS0_NS1 ASV_TableRelAb.txt"),sep = "\t", row.names = FALSE)
 
+#convert to within-sample relative abundance
+ASV_TableRelAb = ASV_Table
+ASV_TableRelAb[,12:(sample_isoNum+12-1)] = colwise(function(x) x/sum(x))(ASV_TableRelAb[,12:(sample_isoNum+12-1)])
+
+
 # load non-pooled ASV table
 ASV_TableNon_pooled = read.delim(paste0(path,"/NS0_NS1 ASV_TableNon_pooled.txt"),sep = "\t", stringsAsFactors = FALSE)
 #convert to within-sample relative abundance
 ASV_TableNon_pooledRelAb = ASV_TableNon_pooled
 ASV_TableNon_pooledRelAb[,3:(sample_isoNum+3-1)] = colwise(function(x) x/sum(x))(ASV_TableNon_pooledRelAb[,3:(sample_isoNum+3-1)])
+
+
+# load full-pooled ASV table
+ASV_TableFull_pooled = read.delim(paste0(path,"/NS0_NS1 ASV_TableFull_pooled.txt"),sep = "\t", stringsAsFactors = FALSE)
+#convert to within-sample relative abundance
+ASV_TableFull_pooledRelAb = ASV_TableFull_pooled
+ASV_TableFull_pooledRelAb[,3:(sample_isoNum+3-1)] = colwise(function(x) x/sum(x))(ASV_TableFull_pooledRelAb[,3:(sample_isoNum+3-1)])
+
+# load pseudo-pooled 7 participant ASV table
+ASV_Table_7par = read.delim(paste0(path,"/NS0_NS1 ASV_Table_reseq.txt"),sep = "\t", stringsAsFactors = FALSE)
+#convert to within-sample relative abundance
+ASV_Table_7parRelAb = ASV_Table_7par
+ASV_Table_7parRelAb[,12:ncol(ASV_Table_7parRelAb)] = colwise(function(x) x/sum(x))(ASV_Table_7parRelAb[,12:ncol(ASV_Table_7parRelAb)])
+
 
 # load pseudo-pooled resequenced ASV table for MS co-analysis
 ASV_Table_reseq = read.delim(paste0(path,"/DIABIMMUNE Chemostat MS_reseq ASV_Table.txt"),sep = "\t", stringsAsFactors = FALSE)
@@ -616,7 +677,7 @@ ASV_Table_reseqRelAb = ASV_Table_reseq
 ASV_Table_reseqRelAb[,12:ncol(ASV_Table_reseqRelAb)] = colwise(function(x) x/sum(x))(ASV_Table_reseqRelAb[,12:ncol(ASV_Table_reseqRelAb)])
 
 # ==== Loading isolates table ====
-path <- "./Alessandra_16s/NS0_NS1 analysis/"
+path <- "./"
 
 # load NS0 isolates table
 NS0_F_C_IsolatesCleaned = read.delim(file.path(path,"input/isolates/NS0 F_C_IsolatesCleaned.txt"),sep = "\t", stringsAsFactors = FALSE)
@@ -625,7 +686,7 @@ NS0_F_C_IsolatesCleaned = read.delim(file.path(path,"input/isolates/NS0 F_C_Isol
 NS1_F_C_IsolatesCleaned = read.delim(file.path(path,"input/isolates/NS1 F_C_IsolatesCleaned.txt"),sep = "\t", stringsAsFactors = FALSE)
 
 # ==== load NMR metabolites data ====
-NMRmetabolite_Table = read.delim(file = "./Alessandra_16s/NS0_NS1 analysis/input/NS0_NS1_NMRmetabolites_media_names.txt", stringsAsFactors = FALSE, check.names = FALSE)
+NMRmetabolite_Table = read.delim(file = "./input/NS0_NS1_NMRmetabolites_media_names.txt", stringsAsFactors = FALSE, check.names = FALSE)
 colnames(NMRmetabolite_Table)[6] = "day_NMR"
 NMRmetabolite_Table_Media = cbind.data.frame(NMRmetabolite_Table[,1:6],scale(NMRmetabolite_Table[,7:ncol(NMRmetabolite_Table)], center = NMRmetabolite_Table[1,7:ncol(NMRmetabolite_Table)], scale = FALSE))
 # NMRmetabolite_Table_Media = NMRmetabolite_Table
@@ -637,7 +698,7 @@ NMRmetabolite_MediaMelt$vessel[is.na(NMRmetabolite_MediaMelt$vessel)] = 1
 
 # ==== load MS metabolites data ====
 # FC MS data
-MSmetabolite_TableFC_clean = read.delim(file = "./Alessandra_16s/NS0_NS1 analysis/input/NS0_NS1_MSmetabolitesFC_clean_names.txt", stringsAsFactors = FALSE, check.names = FALSE)
+MSmetabolite_TableFC_clean = read.delim(file = "./input/NS0_NS1_MSmetabolitesFC_clean_names.txt", stringsAsFactors = FALSE, check.names = FALSE)
 MSmetabolite_TableFC_clean_Media = cbind.data.frame(MSmetabolite_TableFC_clean[,1:7],scale(MSmetabolite_TableFC_clean[,8:ncol(MSmetabolite_TableFC_clean)], center = colMeans(MSmetabolite_TableFC_clean[1:4,8:ncol(MSmetabolite_TableFC_clean)]), scale = FALSE))
 
 # MSmetabolite_TableFC_clean_Zscore = MSmetabolite_TableFC_clean[!is.na(MSmetabolite_TableFC_clean$type),]
@@ -646,7 +707,10 @@ MSmetabolite_TableFC_clean_Media = cbind.data.frame(MSmetabolite_TableFC_clean[,
 # MSmetabolite_TableFC_clean_MediaFold = cbind.data.frame(MSmetabolite_TableFC_clean[,1:7],sweep(MSmetabolite_TableFC_clean[,8:ncol(MSmetabolite_TableFC_clean)],2,colMeans(MSmetabolite_TableFC_clean[1:4,8:ncol(MSmetabolite_TableFC_clean)]),'/'))
 
 # NMRmetabolite_Table_Media = NMRmetabolite_Table
-MSmetabolite_TableFC_cleanMelt = melt(MSmetabolite_TableFC_clean,measure.vars = 8:ncol(MSmetabolite_TableFC_clean), variable.name = "metabolite", value.name = "conc", stringsAsFactors = FALSE)
+MSmetabolite_TableFC_cleanMelt = MSmetabolite_TableFC_clean
+MSmetabolite_TableFC_cleanMelt = MSmetabolite_TableFC_cleanMelt[!is.na(MSmetabolite_TableFC_cleanMelt$source),]
+MSmetabolite_TableFC_cleanMelt = MSmetabolite_TableFC_cleanMelt[,c(1:7,(8:ncol(MSmetabolite_TableFC_cleanMelt))[colSums(MSmetabolite_TableFC_cleanMelt[,8:ncol(MSmetabolite_TableFC_cleanMelt)])!=0])]
+MSmetabolite_TableFC_cleanMelt = melt(MSmetabolite_TableFC_cleanMelt,measure.vars = 8:ncol(MSmetabolite_TableFC_cleanMelt), variable.name = "metabolite", value.name = "conc", stringsAsFactors = FALSE)
 MSmetabolite_TableFC_cleanMelt$vessel[is.na(MSmetabolite_TableFC_cleanMelt$vessel)] = 1
 
 MSmetabolite_TableFC_clean_MediaMelt = melt(MSmetabolite_TableFC_clean_Media,measure.vars = 8:ncol(NMRmetabolite_Table_Media), variable.name = "metabolite", value.name = "conc", stringsAsFactors = FALSE)
@@ -656,7 +720,7 @@ MSmetabolite_TableFC_clean_MediaMelt$vessel[is.na(MSmetabolite_TableFC_clean_Med
 # MSmetabolite_TableFC_clean_ZscoreMelt$vessel[is.na(MSmetabolite_TableFC_clean_ZscoreMelt$vessel)] = 1
 
 # DC MS data
-MSmetabolite_TableDC_clean = read.delim(file = "./Alessandra_16s/NS0_NS1 analysis/input/NS0_NS1_MSmetabolitesDC_clean_names.txt", stringsAsFactors = FALSE, check.names = FALSE)
+MSmetabolite_TableDC_clean = read.delim(file = "./input/NS0_NS1_MSmetabolitesDC_clean_names.txt", stringsAsFactors = FALSE, check.names = FALSE)
 MSmetabolite_TableDC_clean_Media = cbind.data.frame(MSmetabolite_TableDC_clean[,1:7],scale(MSmetabolite_TableDC_clean[,8:ncol(MSmetabolite_TableDC_clean)], center = colMeans(MSmetabolite_TableDC_clean[1:4,8:ncol(MSmetabolite_TableDC_clean)]), scale = FALSE))
 
 # MSmetabolite_TableDC_clean_Zscore = MSmetabolite_TableDC_clean[!is.na(MSmetabolite_TableDC_clean$type),]
@@ -676,12 +740,16 @@ MSmetabolite_TableDC_clean_MediaMelt$vessel[is.na(MSmetabolite_TableDC_clean_Med
 
 
 # ---- Sample Table setup for plots ----
-sample_Table = data.frame(sample_16S = colnames(ASV_Table)[12:(sampleNum+12-1)], stringsAsFactors = FALSE)
+sample_Table = data.frame(sample_16S = c(colnames(ASV_Table)[12:(sampleNum+12-1)],colnames(ASV_Table_7par)[12:ncol(ASV_Table_7par)]), stringsAsFactors = FALSE)
+sample_Table = sample_Table[!duplicated(sample_Table$sample_16S), ,drop = FALSE]
+
 sample_Table = full_join(sample_Table,NMRmetabolite_Table[,c(1:6)])
 
-sample_Table$source[is.na(sample_Table$source)] = substr(sample_Table$sample_16S,1,3)[is.na(sample_Table$source)]
+# sample_Table$source[is.na(sample_Table$source)] = substr(sample_Table$sample_16S,1,3)[is.na(sample_Table$source)]
+sample_Table$source[is.na(sample_Table$source)] = sapply(strsplit(sample_Table$sample_16S,"\\."), function(x) x[1])[is.na(sample_Table$source)]
 
-sample_Table$type[is.na(sample_Table$type)] = substr(sample_Table$sample_16S,5,6)[is.na(sample_Table$type)]
+# sample_Table$type[is.na(sample_Table$type)] = substr(sample_Table$sample_16S,5,6)[is.na(sample_Table$type)]
+sample_Table$type[is.na(sample_Table$type)] = substr(sapply(strsplit(sample_Table$sample_16S,"\\."), function(x) x[2]),1,2)[is.na(sample_Table$type)]
 
 sample_Table$vessel[is.na(sample_Table$vessel)] = sapply(strsplit(sample_Table$sample_16S ,"V|(d.*)", fixed = FALSE), function(x) x[2])[is.na(sample_Table$vessel)]
 sample_Table$vessel[is.na(sample_Table$vessel)&!is.na(sample_Table$sample_16S)] = 0
@@ -789,7 +857,8 @@ titleSize.axis.select = 36
 # textSize.point2 = 14
 legendTextSize.fecal2 = 16
 legendTextSize.chemostat2 = 13
-legendTextSize.chemostat3 = 11
+legendTextSize.chemostat3 = 20
+legendTextSize.day2 = 30
 legendTextSize.day3 = 16
 
 alluvial.theme_x0 = theme_bw()+
@@ -852,7 +921,16 @@ legend.chemostat3.theme = theme_void()+
         axis.ticks = element_blank(),
         axis.text.y = element_blank(),
         axis.text.x = element_text(size=legendTextSize.chemostat3, face = "bold", family="Helvetica", vjust = 0),
-        plot.title = element_text(size=legendSize, face = "bold", family="Helvetica", hjust = 0.66)
+        plot.title = element_text(size=legendSize, face = "bold", family="Helvetica", hjust = 0.5)
+  )
+
+legend.day2.theme = theme_void()+
+  theme(legend.position = "none",
+        axis.title = element_blank(),
+        axis.ticks = element_blank(),
+        axis.text.y = element_blank(),
+        axis.text.x = element_text(size=legendTextSize.day2, face = "bold", family="Helvetica", vjust = 0),
+        plot.title = element_text(size=legendSize, face = "bold", family="Helvetica", hjust = 0.5)
   )
 
 legend.day3.theme = theme_void()+
@@ -1043,7 +1121,7 @@ names(sampleNameLevels) = sampleNameLevelsOrig
 # #### Export setup ####
 # newDir = gsub("-","",Sys.Date(), fixed = TRUE)
 # dir.create(paste0(path,"Figure Outputs/",newDir,"/"))
-newDir = "20230728"
+newDir = "20240517"
 
 # #### Tables ####
 # ---- Tables for reference ----
@@ -1102,13 +1180,13 @@ NS0_F_C_Isolates$`16S sequence (V3-V6 region)`[NS0_F_C_Isolates$`Bacterial strai
 NS0_F_C_Isolates$`16S sequence (V3-V6 region)` = gsub("-","",NS0_F_C_Isolates$`16S sequence (V3-V6 region)`,fixed = TRUE)
 NS1_F_C_Isolates$`16S sequence (V3-V6 region)` = gsub("-","",NS1_F_C_Isolates$`16S sequence (V3-V6 region)`,fixed = TRUE)
 
-write.table(NS0_F_C_Isolates, file = paste0(path,"Figure Outputs/",newDir,"/Supplementary_table3txt.txt"), 
+write.table(NS0_F_C_Isolates, file = paste0(path,"Figure Outputs/",newDir,"/Supp_Table3.txt"), 
             quote = FALSE,
             sep = "\t",
             row.names =  FALSE, 
             col.names = TRUE)
 
-write.table(NS1_F_C_Isolates, file = paste0(path,"Figure Outputs/",newDir,"/Supplementary_table4txt.txt"), 
+write.table(NS1_F_C_Isolates, file = paste0(path,"Figure Outputs/",newDir,"/Supp_Table4.txt"), 
             quote = FALSE,
             sep = "\t",
             row.names =  FALSE, 
@@ -1212,8 +1290,38 @@ write.table(cortest, file = paste0(path,"/Figure Outputs/",newDir,"/Supp_Table9.
             col.names = TRUE)
 
 # #### Figures ####
+# ==== Full Phylum legend ====
+graphData = ASV_TableRelAb[1:9,1:11]
+graphData$BLASTphylum = c(
+  "Actinomycetota",
+  "Bacillota",
+  "Bacteroidota",
+  "Campylobacterota",
+  "Fusobacteriota",
+  "Lentisphaerota",
+  "Pseudomonadota",
+  "Thermodesulfobacteriota",
+  "Verrucomicrobiota"
+)
+
+graphData$data = 1
+
+graphDataMelt = melt(graphData, measure.vars = 12, variable.name = "Sample", value.name = "Relative_Abundance", stringsAsFactors = FALSE)
+
+phylumLegendSource = ggplot() +
+  geom_stratum(data = graphDataMelt, linetype = "solid",  aes(x = Sample, stratum = ASV_Num, y = Relative_Abundance*100, fill = BLASTphylum))+
+  scale_x_discrete(name = "Chemostat Culture (day)")+
+  scale_y_continuous(name = "Relative Abundance (%)")+
+  scale_fill_manual(name = "Phylum", values = phylumColors)+
+  alluvial.theme_x1+
+  theme_void()
+
+phylum.legend.gTable = get_legend(phylumLegendSource)
+# phylum.legend.gTable = phylum.legend.gTable$grobs[[1]]
+
+
 # ==== Supplementary Figures ====
-# ---- Supp_1: scatter plot, selected non-pooled vs psuedo-pooled samples ----
+# ---- Supp_1A: scatter plot, selected non-pooled vs pseudo-pooled samples ----
 # keep NS0.F,NS1.F,NS0.FCd17,NS1.FCd17
 ASV_TableSelectPooled = ASV_Table[,c("NS0.F","NS1.F","NS0.FCd17","NS1.FCd17")]
 rownames(ASV_TableSelectPooled) = ASV_Table$sequences
@@ -1263,22 +1371,316 @@ ASV_TableMergedRelAbMeltCast = dcast(ASV_TableMergedRelAbMelt, formula = ...~poo
 levels(ASV_TableMergedRelAbMeltCast$sample) = sampleNameLevels[match(levels(ASV_TableMergedRelAbMeltCast$sample),colnames(ASV_TableRelAb)[12:ncol(ASV_TableRelAb)])]
 textData = ddply(ASV_TableMergedRelAbMeltCast, .(sample), function(x){
   nnp = sum(x$nonpooled > 0)
-  np = sum(x$pooled > 0)
-  df = data.frame(nnp = nnp, np = np)
+  npp = sum(x$pooled > 0)
+  df = data.frame(nnp = nnp, npp = npp)
 })
 
-Supp_1.plot.point = ggplot()+
+Supp_1A.plot.point = ggplot()+
   geom_point(data = ASV_TableMergedRelAbMeltCast, aes(x = nonpooled*100, y = pooled*100))+
   geom_abline(color = "grey90",slope = 1, intercept = 0)+
   scale_x_log10(name = "non-pooled\nRelative Abundance (%)", labels = label_scientific(digits = 1))+
   scale_y_log10(name = "pseudo-pooled\nRelative Abundance (%)", labels = label_scientific(digits = 1))+
   geom_text(data = textData, size = 7, parse = TRUE, aes(x = 10, y = 0.001, hjust = "inward", vjust = "inward", label = paste("n[np] ==",nnp)))+
-  geom_text(data = textData, size = 7, parse = TRUE, aes(x = 0.001, y = 10, hjust = "inward", vjust = "inward",label = paste("n[p] ==",np)))+
+  geom_text(data = textData, size = 7, parse = TRUE, aes(x = 0.001, y = 10, hjust = "inward", vjust = "inward",label = paste("n[pp] ==",npp)))+
+  facet_wrap(~sample)+
+  coord_fixed()+
+  point.theme
+# ---- Supp_1B: scatter plot, selected full-pooled vs pseudo-pooled samples ----
+# keep NS0.F,NS1.F,NS0.FCd17,NS1.FCd17
+ASV_TableSelectPooled = ASV_Table[,c("NS0.F","NS1.F","NS0.FCd17","NS1.FCd17")]
+rownames(ASV_TableSelectPooled) = ASV_Table$sequences
+colnames(ASV_TableSelectPooled) = paste0("pseudopooled_",colnames(ASV_TableSelectPooled))
+ASV_TableSelectPooled = t(ASV_TableSelectPooled)
+
+ASV_TableSelectFullPooled = ASV_TableFull_pooled[,c("NS0.F","NS1.F","NS0.FCd17","NS1.FCd17")]
+rownames(ASV_TableSelectFullPooled) = ASV_TableFull_pooled$sequences
+colnames(ASV_TableSelectFullPooled) = paste0("fullpooled_",colnames(ASV_TableSelectFullPooled))
+ASV_TableSelectFullPooled = t(ASV_TableSelectFullPooled)
+
+ASV_TableSelectMerged = mergeSequenceTables(ASV_TableSelectFullPooled, ASV_TableSelectPooled)
+ASV_TableSelectMerged_collapse = collapseNoMismatch2(ASV_TableSelectMerged,verbose = TRUE)
+
+ASV_TableMerged = data.frame(ASV_Num = seq_along(colnames(ASV_TableSelectMerged_collapse)), sequences = colnames(ASV_TableSelectMerged_collapse),t(ASV_TableSelectMerged_collapse), stringsAsFactors = FALSE)
+row.names(ASV_TableMerged) = NULL
+ASV_TableMerged$ASV_Num = sprintf("%03d", ASV_TableMerged$ASV_Num)
+ASV_TableMerged$ASV_Num = paste0("ASV_", ASV_TableMerged$ASV_Num)
+
+seq2fasta(ASV_TableMerged$ASV_Num, ASV_TableMerged$sequences, "full_pool_compare", file.path(path,"ASV FASTAs"))
+
+blastResults = BLAST_16S(fastafileName = paste0(path,"/ASV FASTAs/full_pool_compare.txt"),
+                         remote = FALSE,
+                         wait = TRUE,
+                         topHit = TRUE,
+                         taxonomy = TRUE)
+
+ASV_TableMerged = data.frame(ASV_TableMerged[,1:2],
+                             blastResults[match(ASV_TableMerged$ASV_Num, blastResults$query),c("BLASTsuperkingdom","BLASTphylum","BLASTclass","BLASTorder","BLASTfamily","BLASTgenus","BLASTspecies","BLASTmatch")],
+                             BLASTper_id = blastResults$per_id[match(ASV_TableMerged$ASV_Num,blastResults$query)],
+                             ASV_TableMerged[,3:ncol(ASV_TableMerged)])
+
+write.table(ASV_TableMerged,file = file.path(path,"full_pool_compare ASV_Table.txt"),sep = "\t", row.names = FALSE)
+ASV_TableMerged = read.delim(file.path(path,"full_pool_compare ASV_Table.txt"))
+
+#convert to within-sample relative abundance
+ASV_TableMergedRelAb = ASV_TableMerged
+ASV_TableMergedRelAb[,12:ncol(ASV_TableMergedRelAb)] = colwise(function(x) x/sum(x))(ASV_TableMergedRelAb[,12:ncol(ASV_TableMergedRelAb)])
+
+ASV_TableMergedRelAbMelt = melt(ASV_TableMergedRelAb,id.vars = 1:11)
+ASV_TableMergedRelAbMelt$pooled = sapply(strsplit(as.character(ASV_TableMergedRelAbMelt$variable),"_"),function(x) x[1])
+ASV_TableMergedRelAbMelt$sample = sapply(strsplit(as.character(ASV_TableMergedRelAbMelt$variable),"_"),function(x) x[2])
+ASV_TableMergedRelAbMelt$sample = factor(ASV_TableMergedRelAbMelt$sample)
+ASV_TableMergedRelAbMelt$variable = NULL
+
+ASV_TableMergedRelAbMeltCast = dcast(ASV_TableMergedRelAbMelt, formula = ...~pooled, value.var = "value")
+levels(ASV_TableMergedRelAbMeltCast$sample) = sampleNameLevels[match(levels(ASV_TableMergedRelAbMeltCast$sample),colnames(ASV_TableRelAb)[12:ncol(ASV_TableRelAb)])]
+textData = ddply(ASV_TableMergedRelAbMeltCast, .(sample), function(x){
+  nfp = sum(x$fullpooled > 0)
+  npp = sum(x$pseudopooled > 0)
+  df = data.frame(nfp = nfp, npp = npp)
+})
+
+Supp_1B.plot.point = ggplot()+
+  geom_point(data = ASV_TableMergedRelAbMeltCast, aes(x = fullpooled*100, y = pseudopooled*100))+
+  geom_abline(color = "grey90",slope = 1, intercept = 0)+
+  scale_x_log10(name = "full-pooled\nRelative Abundance (%)", labels = label_scientific(digits = 1))+
+  scale_y_log10(name = "pseudo-pooled\nRelative Abundance (%)", labels = label_scientific(digits = 1))+
+  geom_text(data = textData, size = 7, parse = TRUE, aes(x = 10, y = 0.001, hjust = "inward", vjust = "inward", label = paste("n[fp] ==",nfp)))+
+  geom_text(data = textData, size = 7, parse = TRUE, aes(x = 0.001, y = 10, hjust = "inward", vjust = "inward",label = paste("n[pp] ==",npp)))+
   facet_wrap(~sample)+
   coord_fixed()+
   point.theme
 
-# ---- Supp_2: Dendrogram and Boxplot, NS0 and NS1 isolates, phylogenetic relationship and relative abundance in CHILD study samples ---- 
+# ---- Supp_2A-J: Alluvial plot, all samples F, FCd01-d17, colour by F, FCd01-d17 presence ----
+# graphData = ASV_TableRelAb
+graphData = ASV_Table_7parRelAb
+graphData = graphData[,c(1:11,grep(".F",colnames(graphData), fixed = TRUE))]
+# subset graphData by sample
+graphDataList = alply(c("NS0","NS1","S2","S3","NS4","S5","NS6"), 1, function(sampleName){
+  # graphDataList = alply(c("NS0","NS1"), 1, function(sampleName){
+  sampleName.F = paste0(sampleName,".F")
+  
+  output = graphData[,c(1:11,grep(sampleName,colnames(graphData), fixed = TRUE))]
+  
+  # order by relative abundance in F sample and NS0.FC samples
+  output = output[order(output[,sampleName.F], decreasing = TRUE),]
+  output = output[order(rowSums(output[,grep("FC",colnames(output), fixed = TRUE)])),]
+  
+  #order by phylum
+  # output = output[order(output$BLASTphylum),]
+  
+  output$presenceGroupColor = interaction(output[,sampleName.F]!=0,
+                                          rowSums(output[,grep("FC",colnames(output), fixed = TRUE)])!=0)
+  
+  #order by sample presence
+  output = output[order(output$presenceGroupColor),]
+  
+  # generate percentage data for absence/presence data
+  legendData1 = data.frame("day.0" = output[,sampleName.F],
+                           "days.1_17" = rowMeans(output[,grep("FC",colnames(output), fixed = TRUE)]))
+  legendData = aggregate(legendData1, by = list("presenceGroupColor" = interaction(legendData1$day.0!=0,
+                                                                                   legendData1$days.1_17!=0)),
+                         FUN = function(x) sum(x))
+  
+  legendData = legendData[,1:2]
+  
+  legendData$label = paste0(sprintf("%.1f",round(legendData$day.0*100,1)),"%")
+  legendData$label[legendData$day.0==0] = ""
+  
+  legendDataMelt = melt(legendData, measure.vars = 2, variable.name = "Sample", value.name = "Relative_Abundance", stringsAsFactors = FALSE)
+  legendDataMelt = legendDataMelt[legendDataMelt$Relative_Abundance!=0,]
+  legendDataMelt$day_16S = 0
+  
+  # generate legend data for absence/presence tile legend
+  legendDataTile = aggregate(legendData1, by = list("levelName" = output$presenceGroupColor), FUN = function(x) sum(x)*100)
+  
+  legendDataTile = legendDataTile[-1,]
+  legendDataTile = legendDataTile[match(absencePresence2LegendData$levelName,legendDataTile$levelName),]
+  
+  legendDataTile$y = c(2,1,0)
+  
+  legendDataTileMelt = melt(legendDataTile, id.vars = c(1,ncol(legendDataTile)), variable.name = "x")
+  legendDataTileMelt$filled = as.numeric(legendDataTileMelt$value>0)
+  
+  legendDataTileMelt$x = gsub(".","\n",legendDataTileMelt$x, fixed = TRUE)
+  legendDataTileMelt$x = gsub("_","-",legendDataTileMelt$x, fixed = TRUE)
+  
+  legendTile = ggplot()+
+    geom_tile(data = legendDataTileMelt[legendDataTileMelt$filled == 1,],
+              color = "black",
+              size = 0.5,
+              aes(x = x, y = y, fill = levelName))+
+    # geom_text(data = legendDataMelt[legendDataMelt$filled == 1,],
+    #           size = 5.5,
+    #           aes(x = x, y = y, label = value))+
+    geom_tile(data = legendDataTileMelt[legendDataTileMelt$filled == 0,],
+              color = "black",
+              fill = "white",
+              size = 0.5,
+              aes(x = x, y = y))+
+    # geom_tile(data = legendDataTileMelt,
+    #           color = "black",
+    #           height = 0.70,
+    #           width = 0.70,
+    #           size = 0.25,
+    #           aes(x = "", y = y, fill = levelName))+
+    scale_x_discrete(position = "top")+   
+    scale_y_continuous(expand = expansion(add = 0.1))+
+    ggtitle("Identified on:")+
+    coord_fixed()+
+    legend.day2.theme
+  
+  
+  #renumber ASVs based on reordering
+  output$ASV_Num = seq_along(output$ASV_Num)
+  output$ASV_Num = sprintf("%04d", output$ASV_Num)
+  
+  outputMelt = melt(output, measure.vars = 12:(ncol(output)-1), variable.name = "Sample", value.name = "Relative_Abundance", stringsAsFactors = FALSE)
+  outputMelt = outputMelt[outputMelt$Relative_Abundance!=0,]
+  
+  outputMelt$day_16S = sample_Table$day_16S[match(outputMelt$Sample,sample_Table$sample_16S)]
+  
+  # return(outputMelt)
+  
+  #plots
+  #colored by sample presence
+  Supp_2.plot.alluvial.ap = ggplot() + 
+    geom_stratum(data = outputMelt, linetype = "solid",  aes(x = factor(day_16S), stratum = ASV_Num, y = Relative_Abundance*100, fill = presenceGroupColor))+
+    geom_errorbar(data = legendDataMelt, stat = "stratum", position = position_nudge(x = -0.3), width = 0.1, size = 1, aes(x = factor(day_16S), stratum = presenceGroupColor, y = Relative_Abundance*100))+
+    geom_text(data = legendDataMelt, stat = "stratum", nudge_x = -0.375, angle = 90, size = 6, aes(x = factor(day_16S), stratum = presenceGroupColor, y = Relative_Abundance*100, label = label, vjust = 0, hjust = 0.5))+
+    geom_flow(data = outputMelt, color = "black",aes(x = factor(day_16S),stratum = ASV_Num, alluvium = ASV_Num, y = Relative_Abundance*100, fill = presenceGroupColor))+
+    scale_x_discrete(name = "Chemostat Culture (day)", expand = expansion(add = c(0.6,0.4)))+
+    scale_y_continuous(name = "Relative Abundance (%)")+
+    # scale_fill_manual(values = absencePresenceColors3)+
+    alluvial.theme_x1_legend0
+  
+  #colored by phylum
+  Supp_2.plot.alluvial.ph = ggplot() +
+    geom_stratum(data = outputMelt, linetype = "solid",  aes(x = factor(day_16S), stratum = ASV_Num, y = Relative_Abundance*100, fill = BLASTphylum))+
+    geom_flow(data = outputMelt, color = "black",aes(x = factor(day_16S),stratum = ASV_Num, alluvium = ASV_Num, y = Relative_Abundance*100, fill = BLASTphylum))+
+    scale_x_discrete(name = "Chemostat Culture (day)", expand = expansion(add = c(0.6,0.4)))+
+    scale_y_continuous(name = "Relative Abundance (%)")+
+    scale_fill_manual(name = "Phylum", values = phylumColors)+
+    alluvial.theme_x1_legend0
+  
+  return(list(Supp_2.plot.alluvial.ap,Supp_2.plot.alluvial.ph,legendTile))
+})
+names(graphDataList) = c("NS0","NS1","S2","S3","NS4","S5","NS6")
+
+Supp_2A.plot.alluvial.ap = graphDataList[[3]][[1]]
+Supp_2B.plot.alluvial.ap = graphDataList[[4]][[1]]
+Supp_2C.plot.alluvial.ap = graphDataList[[5]][[1]]
+Supp_2D.plot.alluvial.ap = graphDataList[[6]][[1]]
+Supp_2E.plot.alluvial.ap = graphDataList[[7]][[1]]
+
+Supp_2.legend.ap = graphDataList[[1]][[3]]
+
+Supp_2F.plot.alluvial.ph = graphDataList[[3]][[2]]
+Supp_2G.plot.alluvial.ph = graphDataList[[4]][[2]]
+Supp_2H.plot.alluvial.ph = graphDataList[[5]][[2]]
+Supp_2I.plot.alluvial.ph = graphDataList[[6]][[2]]
+Supp_2J.plot.alluvial.ph = graphDataList[[7]][[2]]
+
+Supp_2.ph.legend.gTable = phylum.legend.gTable
+
+install.packages("patchwork")
+library("patchwork")
+
+test = 
+(
+  (
+    (
+      Supp_2A.plot.alluvial.ap|
+      Supp_2B.plot.alluvial.ap|
+      Supp_2C.plot.alluvial.ap|
+      Supp_2D.plot.alluvial.ap|
+      Supp_2E.plot.alluvial.ap|
+      free(Supp_2.legend.ap)
+      )+plot_layout(widths = c(1,1,1,1,1,0.4), axis_titles = "collect"))/
+  (
+    (
+      Supp_2F.plot.alluvial.ph| 
+      Supp_2G.plot.alluvial.ph| 
+      Supp_2H.plot.alluvial.ph| 
+      Supp_2I.plot.alluvial.ph| 
+      Supp_2J.plot.alluvial.ph| 
+      Supp_2.ph.legend.gTable
+      )+plot_layout(widths = c(1,1,1,1,1,0.4), axis_titles = "collect"))/ 
+Supp_2K.plot.PCoA
+)+plot_layout(heights = c(1,1,3))
+
+ggsave(paste0(path,"Figure Outputs/",newDir,"/test.pdf"),
+       plot = test,
+       device=cairo_pdf, # add this to embed the Calibri font
+       width = 45, height = 30,
+       units = "in", # other options c("in", "cm", "mm"),
+       dpi = 300,
+       limitsize = FALSE)
+
+
+test = plot_grid(Supp_2A.plot.alluvial.ap,
+               Supp_2B.plot.alluvial.ap,
+               Supp_2C.plot.alluvial.ap,
+               Supp_2D.plot.alluvial.ap,
+               Supp_2E.plot.alluvial.ap,
+               Supp_2.legend.ap,
+               Supp_2F.plot.alluvial.ph,
+               Supp_2G.plot.alluvial.ph,
+               Supp_2H.plot.alluvial.ph,
+               Supp_2I.plot.alluvial.ph,
+               Supp_2J.plot.alluvial.ph,
+               Supp_2.ph.legend.gTable
+               ,
+          nrow = 2,
+          ncol = 6,
+          rel_widths = c(1,1,1,1,1,0.4),
+          rel_heights	= c(1,1)
+          )
+
+test = plot_grid(test,
+                 Supp_2K.plot.PCoA,
+                 nrow = 2,
+                 ncol = 1,
+                 rel_widths = c(1,1),
+                 rel_heights	= c(1,1.5)
+)
+
+
+plot_grid(Supp_2A.plot.alluvial.ap,
+               Supp_2B.plot.alluvial.ap,
+               Supp_2C.plot.alluvial.ap,
+               Supp_2D.plot.alluvial.ap,
+               Supp_2E.plot.alluvial.ap,
+nrow = 1,
+ncol = 5,
+rel_widths = c(1,1,1,1,1),
+rel_heights	= c(1)
+)
+
+# ---- Supp_2K: PCoA plot, all samples F, FCd13, colour by source, shape by type, path by source ----
+graphData = ASV_Table_7parRelAb
+graphData = graphData[,c(grep("F$",colnames(graphData),fixed = FALSE),grep("FCd13",colnames(graphData),fixed = FALSE))]
+BC_dis = vegdist(t(graphData))
+
+#PCoA
+PCoA = cmdscale(BC_dis, k = 2, eig = TRUE)
+
+Plot_PCoA = sample_Table %>%
+  right_join(tibble::rownames_to_column(data.frame(PCoA$points), var = "sample_16S") %>%
+               rename(PCo1 = X1,
+                      PCo2 = X2))
+Plot_PCoA$type = c("F" = "Fecal", "FC" = "Chemostat")[Plot_PCoA$type]
+
+PCoA.percentvariance = PCoA$eig/sum(PCoA$eig) *100
+
+Supp_2K.plot.PCoA = ggplot()+
+  geom_point(data = Plot_PCoA, size = 3, aes(x = PCo1, y =PCo2, color = source, shape = type))+
+  geom_path(data = Plot_PCoA,aes(x = PCo1, y =PCo2, group = source))+
+  scale_x_continuous(name = paste0("PCo1 (",signif(PCoA.percentvariance[1],3),"%)"))+
+  scale_y_continuous(name = paste0("PCo2 (",signif(PCoA.percentvariance[2],3),"%)"))+
+  scale_shape_discrete(name = "sample type")+
+  coord_fixed()+
+  PCoA.theme
+# ---- Supp_3: Dendrogram and Boxplot, NS0 and NS1 isolates, phylogenetic relationship and relative abundance in CHILD study samples ---- 
 # # load DIABIMMUNE combined ASV table
 # DIABIMMUNE_ASV_Table = read.delim(paste0(path,"/DIABIMMUNE_combined ASV_Table.txt"),sep = "\t", stringsAsFactors = FALSE)
 # DIABIMMUNE_metadata = read.delim(paste0(path,"/DIABIMMUNE_combined metadata.txt"),sep = "\t", stringsAsFactors = FALSE)
@@ -1505,7 +1907,7 @@ CHILD_mergedASV_Table_SpeciesColBoxplotMelt = reshape2::melt(CHILD_mergedASV_Tab
                                                              value.name = "relative_abundance")
 
 # for Kalign-based dendrogram plot
-Supp_2.dendrogram = ggplot()+
+Supp_3.dendrogram = ggplot()+
   # plotting branches
   geom_segment(data = merged_ggdend$segments,
                linewidth = 0.1,
@@ -1547,11 +1949,11 @@ Supp_2.dendrogram = ggplot()+
         legend.text = element_text(size=textSize, face = "bold", family="Helvetica"),
         legend.key = element_blank())
 
-Supp_2.legend.gTable = get_legend(Supp_2.dendrogram)
-Supp_2.dendrogram = Supp_2.dendrogram + 
+Supp_3.legend.gTable = get_legend(Supp_3.dendrogram)
+Supp_3.dendrogram = Supp_3.dendrogram + 
   theme(legend.position = "none")
 
-Supp_2.dendrogram.CoordFlip =
+Supp_3.dendrogram.CoordFlip =
   ggplot()+
   # plotting branches
   geom_segment(data = merged_ggdend$segments,
@@ -1595,12 +1997,12 @@ Supp_2.dendrogram.CoordFlip =
         legend.text = element_text(size=textSize, face = "bold", family="Helvetica"),
         legend.key = element_blank())
 
-Supp_2.CoordFlip.legend.gTable = get_legend(Supp_2.dendrogram.CoordFlip)
-Supp_2.dendrogram.CoordFlip = Supp_2.dendrogram.CoordFlip + 
+Supp_3.CoordFlip.legend.gTable = get_legend(Supp_3.dendrogram.CoordFlip)
+Supp_3.dendrogram.CoordFlip = Supp_3.dendrogram.CoordFlip + 
   theme(legend.position = "none")
 
 
-Supp_2.boxplot = ggplot()+
+Supp_3.boxplot = ggplot()+
   geom_boxplot(data = CHILD_mergedASV_Table_SpeciesColBoxplotMelt, size = 0.1, outlier.size = 0.1,
                aes(x = treeOrder, y = log10(relative_abundance)))+
   ylab("log10(rel. abundance)")+
@@ -1613,7 +2015,7 @@ Supp_2.boxplot = ggplot()+
         plot.margin = margin(0,5.5,5.5,5.5, unit = "pt"),
         legend.position = "none")
 
-Supp_2.boxplot.CoordFlip =
+Supp_3.boxplot.CoordFlip =
   ggplot()+
   geom_boxplot(data = CHILD_mergedASV_Table_SpeciesColBoxplotMelt, size = 0.1, outlier.size = 0.1,
                aes(y = treeOrder, x = log10(relative_abundance)))+
@@ -1628,670 +2030,667 @@ Supp_2.boxplot.CoordFlip =
         plot.margin = margin(5.5,5.5,5.5,0, unit = "pt"),
         legend.position = "none")
 
-Supp_2.plot_grid.Norm = plot_grid(Supp_2.dendrogram,
-                                  Supp_2.boxplot,
+Supp_3.plot_grid.Norm = plot_grid(Supp_3.dendrogram,
+                                  Supp_3.boxplot,
                                   ncol = 1, rel_heights = c(5,3))
 
-Supp_2.plot_grid.CoordFlip = plot_grid(Supp_2.dendrogram.CoordFlip,
-                             Supp_2.boxplot.CoordFlip, 
+Supp_3.plot_grid.CoordFlip = plot_grid(Supp_3.dendrogram.CoordFlip,
+                             Supp_3.boxplot.CoordFlip, 
                              ncol = 2, rel_widths = c(5,3))
 
-# ==== Figure 1 ====
-# ---- A,B: Alluvial plot, both F, colour by F presence and phylum ----
+# ---- Supp_4: Alluvial plot, NS1 DCd00, DCV1-3 d01-d17, colour by DCd00, DCd01-d17 presence and phylum ----
 graphData = ASV_TableRelAb
-# select samples
-graphData = graphData[,c(1:11,which(colnames(graphData) %in% c("NS0.F","NS1.F")))]
-#order by relative abundance in samples
-graphData = graphData[order(rowSums(graphData[,c("NS0.F","NS1.F")]),decreasing = TRUE),]
-#order by phylum
-graphData = graphData[order(graphData$BLASTphylum),]
+colnames(graphData)[colnames(graphData)=="NS1.DCV3d09R"] = "NS1.DCV3d09"
+colnames(graphData)[grep("d21", colnames(graphData), fixed = TRUE)] = "X"
+graphData = graphData[,c(1:11,grep("NS1\\.DCd00|NS1\\.DCV.d..$",colnames(graphData), fixed = FALSE))]
 
-graphData$presenceGroupColor = interaction(graphData$NS0.F!=0,
-                                           graphData$NS1.F!=0
+# subset graphData by sample
+graphDataList = alply(c("V1","V2","V3"), 1, function(sampleName){
+  sampleName.DCd00 = "NS1.DCd00"
+  
+  output = graphData[,c(1:11,
+                        grep(sampleName.DCd00,colnames(graphData), fixed = TRUE),
+                        grep(sampleName,colnames(graphData), fixed = TRUE))]
+  
+  # order by relative abundance in F sample and NS0.FC samples
+  output = output[order(output[,sampleName.DCd00], decreasing = TRUE),]
+  output = output[order(rowSums(output[,grep(sampleName,colnames(output), fixed = TRUE)])),]
+  
+  #order by phylum
+  output = output[order(output$BLASTphylum),]
+  
+  output$presenceGroupColor = interaction(output[,sampleName.DCd00]!=0,
+                                          rowSums(output[,grep(sampleName,colnames(output), fixed = TRUE)])!=0)
+  
+  #order by sample presence
+  output = output[order(output$presenceGroupColor),]
+  
+  # generate percentage data for absence/presence data
+  legendData1 = data.frame("day.0" = output[,sampleName.DCd00],
+                           "days.1_17" = rowMeans(output[,grep(sampleName,colnames(output), fixed = TRUE)]))
+  legendData = aggregate(legendData1, by = list("presenceGroupColor" = interaction(legendData1$day.0!=0,
+                                                                                   legendData1$days.1_17!=0)),
+                         FUN = function(x) sum(x))
+  
+  legendData = legendData[,1:2]
+  
+  legendData$label = paste0(sprintf("%.1f",round(legendData$day.0*100,1)),"%")
+  legendData$label[legendData$day.0==0] = ""
+  
+  legendDataMelt = melt(legendData, measure.vars = 2, variable.name = "Sample", value.name = "Relative_Abundance", stringsAsFactors = FALSE)
+  legendDataMelt = legendDataMelt[legendDataMelt$Relative_Abundance!=0,]
+  legendDataMelt$day_16S = 0
+  
+  # generate legend data for absence/presence tile legend
+  legendDataTile = aggregate(legendData1, by = list("levelName" = output$presenceGroupColor), FUN = function(x) sum(x)*100)
+  
+  legendDataTile = legendDataTile[-1,]
+  legendDataTile = legendDataTile[match(absencePresence2LegendData$levelName,legendDataTile$levelName),]
+  
+  legendDataTile$y = c(2,1,0)
+  
+  legendDataTileMelt = melt(legendDataTile, id.vars = c(1,ncol(legendDataTile)), variable.name = "x")
+  legendDataTileMelt$filled = as.numeric(legendDataTileMelt$value>0)
+  
+  legendDataTileMelt$x = gsub(".","\n",legendDataTileMelt$x, fixed = TRUE)
+  legendDataTileMelt$x = gsub("_","-",legendDataTileMelt$x, fixed = TRUE)
+  
+  legendTile = ggplot()+
+    geom_tile(data = legendDataTileMelt[legendDataTileMelt$filled == 1,],
+              color = "black",
+              size = 0.5,
+              aes(x = x, y = y, fill = levelName))+
+    # geom_text(data = legendDataMelt[legendDataMelt$filled == 1,],
+    #           size = 5.5,
+    #           aes(x = x, y = y, label = value))+
+    geom_tile(data = legendDataTileMelt[legendDataTileMelt$filled == 0,],
+              color = "black",
+              fill = "white",
+              size = 0.5,
+              aes(x = x, y = y))+
+    # geom_tile(data = legendDataTileMelt,
+    #           color = "black",
+    #           height = 0.70,
+    #           width = 0.70,
+    #           size = 0.25,
+    #           aes(x = "", y = y, fill = levelName))+
+    scale_x_discrete(position = "top")+   
+    scale_y_continuous(expand = expansion(add = 0.1))+
+    ggtitle("Identified on:")+
+    coord_fixed()+
+    legend.day2.theme
+  
+  #renumber ASVs based on reordering
+  output$ASV_Num = seq_along(output$ASV_Num)
+  output$ASV_Num = sprintf("%04d", output$ASV_Num)
+  
+  outputMelt = melt(output, measure.vars = 12:(ncol(output)-1), variable.name = "Sample", value.name = "Relative_Abundance", stringsAsFactors = FALSE)
+  outputMelt = outputMelt[outputMelt$Relative_Abundance!=0,]
+  
+  outputMelt$day_16S = sample_Table$day_16S[match(outputMelt$Sample,sample_Table$sample_16S)]
+  
+  # return(outputMelt)
+  
+  #plots
+  #colored by sample presence
+  Supp_4.plot.alluvial.ap = ggplot() + 
+    geom_stratum(data = outputMelt, linetype = "solid",  aes(x = factor(day_16S), stratum = ASV_Num, y = Relative_Abundance*100, fill = presenceGroupColor))+
+    geom_errorbar(data = legendDataMelt, stat = "stratum", position = position_nudge(x = -0.3), width = 0.1, size = 1, aes(x = factor(day_16S), stratum = presenceGroupColor, y = Relative_Abundance*100))+
+    geom_text(data = legendDataMelt, stat = "stratum", nudge_x = -0.375, angle = 90, size = 6, aes(x = factor(day_16S), stratum = presenceGroupColor, y = Relative_Abundance*100, label = label, vjust = 0, hjust = 0.5))+
+    geom_flow(data = outputMelt, color = "black",aes(x = factor(day_16S),stratum = ASV_Num, alluvium = ASV_Num, y = Relative_Abundance*100, fill = presenceGroupColor))+
+    scale_x_discrete(name = "Chemostat Culture (day)", expand = expansion(add = c(0.6,0.4)))+
+    scale_y_continuous(name = "Relative Abundance (%)")+
+    # scale_fill_manual(values = absencePresenceColors3)+
+    alluvial.theme_x1_legend0
+  
+  #colored by phylum
+  Supp_4.plot.alluvial.ph = ggplot() +
+    geom_stratum(data = outputMelt, linetype = "solid",  aes(x = factor(day_16S), stratum = ASV_Num, y = Relative_Abundance*100, fill = BLASTphylum))+
+    geom_flow(data = outputMelt, color = "black",aes(x = factor(day_16S),stratum = ASV_Num, alluvium = ASV_Num, y = Relative_Abundance*100, fill = BLASTphylum))+
+    scale_x_discrete(name = "Chemostat Culture (day)", expand = expansion(add = c(0.6,0.4)))+
+    scale_y_continuous(name = "Relative Abundance (%)")+
+    scale_fill_manual(name = "Phylum", values = phylumColors)+
+    alluvial.theme_x1_legend0
+  
+  return(list(Supp_4.plot.alluvial.ap,Supp_4.plot.alluvial.ph,legendTile))
+})
+names(graphDataList) = c("V1","V2","V3")
+
+Supp_4A.plot.alluvial.ap = graphDataList[[1]][[1]]
+Supp_4B.plot.alluvial.ph = graphDataList[[1]][[2]]
+
+Supp_4C.plot.alluvial.ap = graphDataList[[2]][[1]]
+Supp_4D.plot.alluvial.ph = graphDataList[[2]][[2]]
+
+Supp_4E.plot.alluvial.ap = graphDataList[[3]][[1]]
+Supp_4F.plot.alluvial.ph = graphDataList[[3]][[2]]
+
+Supp_4.legend.ap = graphDataList[[1]][[3]]
+Supp_4.ph.legend.gTable = phylum.legend.gTable
+
+# ---- Supp_5A: heatmap of ASV vs NMR metabolite correlations, NS1DCV1-3d05-d17, without d1 ----
+X_16S = data.frame(t(ASV_TableRelAb[,12:(sampleNum+12-1)])) %>% tibble::rownames_to_column(var = "sample_16S")
+colnames(X_16S)[2:ncol(X_16S)] = ASV_TableRelAb$ASV_Num
+
+X_16S = X_16S[grep("NS1.DC", X_16S$sample_16S, fixed = TRUE),]
+
+# remove d01
+X_16S = X_16S[!grepl("d01", X_16S$sample_16S, fixed = TRUE),]
+# remove >d17
+X_16S = X_16S[substr(X_16S$sample_16S, nchar(X_16S$sample_16S)-1,nchar(X_16S$sample_16S))<=17,]
+
+X_metabolites = semi_join(NMRmetabolite_Table,X_16S, by = c(sample_16S = "sample_16S"))
+X_16S = semi_join(X_16S,NMRmetabolite_Table, by = c(sample_16S = "sample_16S"))
+X_16S = X_16S[,c(1,which(colSums(X_16S[2:ncol(X_16S)])!=0)+1)]
+X_16S = X_16S[,colSums(X_16S != 0)>1]
+
+X_metabolites = X_metabolites[match(X_16S$sample_16S,X_metabolites$sample_16S),]
+
+cortest = cor(X_metabolites[,7:26],X_16S[,2:ncol(X_16S)])
+colnames(cortest) = ASV_TableRelAb$BLASTmatch[match(colnames(cortest),ASV_TableRelAb$ASV_Num)]
+
+Supp_5A.heatplot = Heatmap(cortest, 
+                         name = "ASVs vs. Metabolites", #title of legend
+                         row_title = "Metabolites", column_title = "ASVs",
+                         show_column_names = FALSE,
+                         show_row_names = TRUE,
+                         row_names_gp = gpar(fontsize = 15), # Text size for row names
+                         column_names_gp = gpar(fontsize = 3), # Text size for column names
+                         clustering_method_rows = "complete", clustering_method_columns = "complete",
+                         row_km = 1, column_km = 6,
+                         show_parent_dend_line = FALSE,
+                         column_gap = unit(0.005, "npc"),
+                         col = circlize::colorRamp2(breaks = c(-1,0,1),
+                                                    colors = c("#4575B4", "#FFFFBF", "#D73027")),
+                         heatmap_legend_param = list(
+                           legend_width = unit(12, "cm"),
+                           direction = "horizontal"
+                         )
 )
 
-#order by sample presence
-graphData = graphData[order(graphData$presenceGroupColor),]
+Supp_5A.heatplot = ComplexHeatmap::draw(object = Supp_5A.heatplot, heatmap_legend_side = "top")
 
-# generate legend data
-# generate percentage data for absence/presence data
-legendData1 = graphData[,c("NS0.F","NS1.F")]
+# ---- Supp_5B,C: scatter plot of selected ASV vs NMR metabolite correlations, NS1 ----
+X_16S = data.frame(t(ASV_TableRelAb[,12:(sampleNum+12-1)])) %>% tibble::rownames_to_column(var = "sample_16S")
+colnames(X_16S)[2:ncol(X_16S)] = ASV_TableRelAb$ASV_Num
 
-legendData = aggregate(legendData1, by = list("levelName" = graphData$presenceGroupColor), FUN = function(x) sum(x)*100)
-legendData = legendData[-1,]
-legendData = legendData[match(absencePresence2LegendData$levelName,legendData$levelName),]
-legendData$y = c(2,1,0)
+X_16S = X_16S[grep("NS1.DC", X_16S$sample_16S, fixed = TRUE),]
 
-legendDataMelt = melt(legendData, id.vars = c(1,ncol(legendData)), variable.name = "x")
-legendDataMelt$filled = as.numeric(legendDataMelt$value>0)
-legendDataMelt$value = paste0(sprintf("%.1f",round(legendDataMelt$value,1)),"%")
+# remove d01
+X_16S = X_16S[!grepl("d01", X_16S$sample_16S, fixed = TRUE),]
+# remove >d17
+X_16S = X_16S[substr(X_16S$sample_16S, nchar(X_16S$sample_16S)-1,nchar(X_16S$sample_16S))<=17,]
 
-levels(legendDataMelt$x) = sampleNameLevels.3lines[levels(legendDataMelt$x)]
+X_metabolites = semi_join(NMRmetabolite_Table,X_16S, by = c(sample_16S = "sample_16S"))
+X_16S = semi_join(X_16S,NMRmetabolite_Table, by = c(sample_16S = "sample_16S"))
+X_16S = X_16S[,c(1,which(colSums(X_16S[2:ncol(X_16S)])!=0)+1)]
 
-Fig1A.legend = ggplot()+
-  geom_tile(data = legendDataMelt[legendDataMelt$filled == 1,],
-            color = "black",
-            size = 0.5,
-            aes(x = x, y = y, fill = levelName))+
-  geom_text(data = legendDataMelt[legendDataMelt$filled == 1,],
-            size = 7,
-            aes(x = x, y = y, label = value))+
-  geom_tile(data = legendDataMelt[legendDataMelt$filled == 0,],
-            color = "black",
-            fill = "white",
-            size = 0.5,
-            aes(x = x, y = y))+
-  geom_tile(data = legendDataMelt,
-            color = "black",
-            height = 0.70,
-            width = 0.70,
-            size = 0.25,
-            aes(x = "", y = y, fill = levelName))+
-  scale_x_discrete(position = "top", limits = c("",levels(legendDataMelt$x)))+   
-  scale_y_continuous(expand = expansion(add = 0.1))+
-  ggtitle("Identified in:")+
-  coord_fixed()+
-  legend.fecal2.theme
+X_metabolites = X_metabolites[match(X_16S$sample_16S,X_metabolites$sample_16S),]
+
+cortest = cor(X_metabolites[,7:26],X_16S[,2:ncol(X_16S)])
+cortestMelt = melt(cortest)
+cortestMelt$abundance = apply(X_16S[,2:ncol(X_16S)], 2, function(x) sum(x))[cortestMelt$Var2]
+cortestMelt$conc = apply(X_metabolites[,7:ncol(X_metabolites)], 2, function(x) sum(x))[cortestMelt$Var1]
+cortestMelt$abundanceVar = apply(X_16S[,2:ncol(X_16S)], 2, function(x) sd(x))[cortestMelt$Var2]
+cortestMelt$concVar = apply(X_metabolites[,7:ncol(X_metabolites)], 2, function(x) sd(x))[cortestMelt$Var1]
+cortestMelt$metric = cortestMelt$value * cortestMelt$abundanceVar * cortestMelt$concVar
+# cortestMelt$metric = cortestMelt$value * cortestMelt$abundanceVar
+
+graphData1 = data.frame(correlation = "positive", ASV = "ASV_008", X_16S = X_16S$ASV_008*100, metabolite = "Acetate", X_metabolites = X_metabolites$Acetate)
+graphData2 = data.frame(correlation = "negative", ASV = "ASV_002", X_16S = X_16S$ASV_002*100, metabolite = "Acetate", X_metabolites = X_metabolites$Acetate)
+graphData = rbind(graphData1,graphData2)
+
+slope1 = summary(lm(X_metabolites~X_16S, data = graphData1))$coefficients[2,1]
+rsq1 = summary(lm(X_metabolites~X_16S, data = graphData1))$r.squared
+
+graphData1$label = paste0("slope ==",signif(slope1,3),"*';'~R^2 ==", signif(rsq1,3))
+
+slope2 = summary(lm(X_metabolites~X_16S, data = graphData2))$coefficients[2,1]
+rsq2 = summary(lm(X_metabolites~X_16S, data = graphData2))$r.squared
+
+graphData2$label = paste0("slope ==",signif(slope2,3),"*';'~R^2 ==", signif(rsq2,3))
 
 
-#renumber ASVs based on reordering
-graphData$ASV_Num = seq_along(graphData$ASV_Num)
-graphData$ASV_Num = sprintf("%03d", graphData$ASV_Num)
+# Supp_5B.plot = ggplot()+
+#   geom_point(data = graphData, aes(x = X_16S, y = X_metabolites, color = ASV))+
+#   facet_wrap(~correlation, scales = "free")
 
-graphDataMelt = melt(graphData, measure.vars = 12:(ncol(graphData)-1), variable.name = "Sample", value.name = "Relative_Abundance", stringsAsFactors = FALSE)
+Supp_5B.plot.point = ggplot()+
+  geom_point(data = graphData1, size = 5, aes(x = X_16S, y = X_metabolites))+
+  xlab(bquote(atop(italic(.(ASV_TableRelAb$BLASTspecies[ASV_TableRelAb$ASV_Num==graphData1$ASV[1]])),"% relative abundance")))+
+  ylab(paste0("[",graphData1$metabolite[1],"]"," (mM)"))+
+  new_scale_color()+
+  geom_smooth(data = graphData1, method = "lm", se = FALSE, aes(x = X_16S, y = X_metabolites, color = label))+
+  scale_colour_discrete(name = "",
+                        labels = label_parse())+
+  point.select.theme_legendtl
 
-graphDataMelt = graphDataMelt[graphDataMelt$Relative_Abundance!=0,]
-levels(graphDataMelt$Sample) = sampleNameLevels.3lines[levels(graphDataMelt$Sample)]
-
-#plots
-#colored by sample presence
-Fig1A.plot.alluvial.ap = ggplot() + 
-  geom_stratum(data = graphDataMelt, linetype = "solid", aes(x = Sample, stratum = ASV_Num, y = Relative_Abundance*100, fill = presenceGroupColor))+
-  geom_flow(data = graphDataMelt, color = "black",aes(x = Sample,stratum = ASV_Num, alluvium = ASV_Num, y = Relative_Abundance*100, fill = presenceGroupColor))+
-  scale_y_continuous(name = "Relative Abundance (%)")+
-  alluvial.theme_x0_legend0
-
-#colored by phylum
-Fig1B.plot.alluvial.ph = ggplot() +
-  geom_stratum(data = graphDataMelt, linetype = "solid", aes(x = Sample, stratum = ASV_Num, y = Relative_Abundance*100, fill = BLASTphylum))+
-  geom_flow(data = graphDataMelt, color = "black",aes(x = Sample,stratum = ASV_Num, alluvium = ASV_Num, y = Relative_Abundance*100, fill = BLASTphylum))+
-  scale_y_continuous(name = "Relative Abundance (%)")+
-  scale_fill_manual(name = "Phylum", values = phylumColors)+
-  alluvial.theme_x0
-
-Fig1B.legend.gTable = get_legend(Fig1B.plot.alluvial.ph)
-Fig1B.plot.alluvial.ph = Fig1B.plot.alluvial.ph + alluvial.theme_x0_legend0
-
-# ---- C,D: Alluvial plot, NS0 F, FCd01-d17, colour by F, FCd01, FCd05-d17 presence and phylum----
-graphData = ASV_TableRelAb
-# select samples
-graphData = graphData[,c(1:11,which(colnames(graphData) %in% c("NS0.F","NS0.FCd01", "NS0.FCd05", "NS0.FCd09", "NS0.FCd13", "NS0.FCd17")))]
-#order by relative abundance in NS0.F and NS0.FC samples
-graphData = graphData[order(rowSums(graphData[,c("NS0.F","NS0.FCd01", "NS0.FCd05", "NS0.FCd09", "NS0.FCd13", "NS0.FCd17")]),decreasing = TRUE),]
-#order by phylum
-graphData = graphData[order(graphData$BLASTphylum),]
-
-graphData$presenceGroupColor = interaction(graphData$NS0.F!=0,
-                                           graphData$NS0.FCd01!=0,
-                                           rowSums(graphData[,c("NS0.FCd05", "NS0.FCd09", "NS0.FCd13","NS0.FCd17")])!=0
-                                           )
-
-#order by sample presence
-graphData = graphData[order(graphData$presenceGroupColor),]
-
-# generate legend data
-# generate percentage data for absence/presence data
-legendData1 = data.frame("day.0" = graphData$NS0.F,
-                         "day.1" = graphData$NS0.FCd01,
-                         "days.5_17" = rowMeans(graphData[,c("NS0.FCd05", "NS0.FCd09", "NS0.FCd13","NS0.FCd17")]))
-
-legendData = aggregate(legendData1, by = list("levelName" = graphData$presenceGroupColor), FUN = function(x) sum(x)*100)
-legendData = legendData[-1,]
-legendData = legendData[match(absencePresence3LegendData$levelName,legendData$levelName),]
-legendData$y = c(6,5,4,3,2,1,0)
-
-legendDataMelt = melt(legendData, id.vars = c(1,ncol(legendData)), variable.name = "x")
-legendDataMelt$filled = as.numeric(legendDataMelt$value>0)
-legendDataMelt$value = paste0(sprintf("%.1f",round(legendDataMelt$value,1)),"%")
-
-legendDataMelt$x = gsub(".","\n",legendDataMelt$x, fixed = TRUE)
-legendDataMelt$x = gsub("_","-",legendDataMelt$x, fixed = TRUE)
-
-Fig1C.legend = ggplot()+
-  geom_tile(data = legendDataMelt[legendDataMelt$filled == 1,],
-            color = "black",
-            size = 0.5,
-            aes(x = x, y = y, fill = levelName))+
-  geom_text(data = legendDataMelt[legendDataMelt$filled == 1,],
-            size = 5.5,
-            aes(x = x, y = y, label = value))+
-  geom_tile(data = legendDataMelt[legendDataMelt$filled == 0,],
-            color = "black",
-            fill = "white",
-            size = 0.5,
-            aes(x = x, y = y))+
-  geom_tile(data = legendDataMelt,
-            color = "black",
-            height = 0.70,
-            width = 0.70,
-            size = 0.25,
-            aes(x = "", y = y, fill = levelName))+
-  scale_x_discrete(position = "top")+   
-  scale_y_continuous(expand = expansion(add = 0.1))+
-  ggtitle("Identified on:")+
-  coord_fixed()+
-  legend.day3.theme
-
-#renumber ASVs based on reordering
-graphData$ASV_Num = seq_along(graphData$ASV_Num)
-graphData$ASV_Num = sprintf("%03d", graphData$ASV_Num)
-
-graphDataMelt = melt(graphData, measure.vars = 12:(ncol(graphData)-1), variable.name = "Sample", value.name = "Relative_Abundance", stringsAsFactors = FALSE)
-graphDataMelt = graphDataMelt[graphDataMelt$Relative_Abundance!=0,]
-
-graphDataMelt$day_16S = sample_Table$day_16S[match(graphDataMelt$Sample,sample_Table$sample_16S)]
-
-#plots
-#colored by sample presence
-Fig1C.plot.alluvial.ap = ggplot() + 
-  geom_stratum(data = graphDataMelt, linetype = "solid",  aes(x = factor(day_16S), stratum = ASV_Num, y = Relative_Abundance*100, fill = presenceGroupColor))+
-  geom_flow(data = graphDataMelt, color = "black",aes(x = factor(day_16S),stratum = ASV_Num, alluvium = ASV_Num, y = Relative_Abundance*100, fill = presenceGroupColor))+
-  scale_x_discrete(name = "Chemostat Culture (day)")+
-  scale_y_continuous(name = "Relative Abundance (%)")+
-  # scale_fill_manual(values = absencePresenceColors3)+
-  alluvial.theme_x1_legend0
-
-#colored by phylum
-Fig1D.plot.alluvial.ph = ggplot() +
-  geom_stratum(data = graphDataMelt, linetype = "solid",  aes(x = factor(day_16S), stratum = ASV_Num, y = Relative_Abundance*100, fill = BLASTphylum))+
-  geom_flow(data = graphDataMelt, color = "black",aes(x = factor(day_16S),stratum = ASV_Num, alluvium = ASV_Num, y = Relative_Abundance*100, fill = BLASTphylum))+
-  scale_x_discrete(name = "Chemostat Culture (day)")+
-  scale_y_continuous(name = "Relative Abundance (%)")+
-  scale_fill_manual(name = "Phylum", values = phylumColors)+
-  alluvial.theme_x1
-
-Fig1D.legend.gTable = get_legend(Fig1D.plot.alluvial.ph)
-Fig1D.plot.alluvial.ph = Fig1D.plot.alluvial.ph + alluvial.theme_x1_legend0
-
-# ---- E,F: Alluvial plot, NS1 F, FCd01-d17, colour by F, FCd01, FCd05-d17 presence and phylum----
-graphData = ASV_TableRelAb
-# select samples
-graphData = graphData[,c(1:11,which(colnames(graphData) %in% c("NS1.F","NS1.FCd01", "NS1.FCd05", "NS1.FCd09", "NS1.FCd13", "NS1.FCd17")))]
-#order by relative abundance in NS1.F and NS1.FC samples
-graphData = graphData[order(rowSums(graphData[,c("NS1.F","NS1.FCd01", "NS1.FCd05", "NS1.FCd09", "NS1.FCd13", "NS1.FCd17")]),decreasing = TRUE),]
-#order by phylum
-graphData = graphData[order(graphData$BLASTphylum),]
-
-graphData$presenceGroupColor = interaction(graphData$NS1.F!=0,
-                                           graphData$NS1.FCd01!=0,
-                                           rowSums(graphData[,c("NS1.FCd05", "NS1.FCd09", "NS1.FCd13", "NS1.FCd17")])!=0
-                                           )
-
-#order by sample presence
-graphData = graphData[order(graphData$presenceGroupColor),]
-
-# generate legend data
-# generate percentage data for absence/presence data
-legendData1 = data.frame("day.0" = graphData$NS1.F,
-                         "day.1" = graphData$NS1.FCd01,
-                         "days.5_17" = rowMeans(graphData[,c("NS1.FCd05", "NS1.FCd09", "NS1.FCd13", "NS1.FCd17")]))
-
-legendData = aggregate(legendData1, by = list("levelName" = graphData$presenceGroupColor), FUN = function(x) sum(x)*100)
-legendData = legendData[-1,]
-legendData = legendData[match(absencePresence3LegendData$levelName,legendData$levelName),]
-legendData$y = c(6,5,4,3,2,1,0)
-
-legendDataMelt = melt(legendData, id.vars = c(1,ncol(legendData)), variable.name = "x")
-legendDataMelt$filled = as.numeric(legendDataMelt$value>0)
-legendDataMelt$value = paste0(sprintf("%.1f",round(legendDataMelt$value,1)),"%")
-
-legendDataMelt$x = gsub(".","\n",legendDataMelt$x, fixed = TRUE)
-legendDataMelt$x = gsub("_","-",legendDataMelt$x, fixed = TRUE)
-
-Fig1E.legend = ggplot()+
-  geom_tile(data = legendDataMelt[legendDataMelt$filled == 1,],
-            color = "black",
-            size = 0.5,
-            aes(x = x, y = y, fill = levelName))+
-  geom_text(data = legendDataMelt[legendDataMelt$filled == 1,],
-            size = 5.5,
-            aes(x = x, y = y, label = value))+
-  geom_tile(data = legendDataMelt[legendDataMelt$filled == 0,],
-            color = "black",
-            fill = "white",
-            size = 0.5,
-            aes(x = x, y = y))+
-  geom_tile(data = legendDataMelt,
-            color = "black",
-            height = 0.70,
-            width = 0.70,
-            size = 0.25,
-            aes(x = "", y = y, fill = levelName))+
-  scale_x_discrete(position = "top")+   
-  scale_y_continuous(expand = expansion(add = 0.1))+
-  ggtitle("Identified on:")+
-  coord_fixed()+
-  legend.day3.theme
-
-#renumber ASVs based on reordering
-graphData$ASV_Num = seq_along(graphData$ASV_Num)
-graphData$ASV_Num = sprintf("%03d", graphData$ASV_Num)
-
-graphDataMelt = melt(graphData, measure.vars = 12:(ncol(graphData)-1), variable.name = "Sample", value.name = "Relative_Abundance", stringsAsFactors = FALSE)
-graphDataMelt = graphDataMelt[graphDataMelt$Relative_Abundance!=0,]
-
-graphDataMelt$day_16S = sample_Table$day_16S[match(graphDataMelt$Sample,sample_Table$sample_16S)]
-#plots
-#colored by sample presence
-Fig1E.plot.alluvial.ap = ggplot() +
-  geom_stratum(data = graphDataMelt, linetype = "solid",  aes(x = factor(day_16S), stratum = ASV_Num, y = Relative_Abundance*100, fill = presenceGroupColor))+
-  geom_flow(data = graphDataMelt, color = "black",aes(x = factor(day_16S),stratum = ASV_Num, alluvium = ASV_Num, y = Relative_Abundance*100, fill = presenceGroupColor))+
-  scale_x_discrete(name = "Chemostat Culture (day)")+
-  scale_y_continuous(name = "Relative Abundance (%)")+
-  # scale_fill_manual(values = absencePresenceColors3)+
-  alluvial.theme_x1_legend0
-
-#colored by phylum
-Fig1F.plot.alluvial.ph = ggplot() +
-  geom_stratum(data = graphDataMelt, linetype = "solid",  aes(x = factor(day_16S), stratum = ASV_Num, y = Relative_Abundance*100, fill = BLASTphylum))+
-  geom_flow(data = graphDataMelt, color = "black",aes(x = factor(day_16S),stratum = ASV_Num, alluvium = ASV_Num, y = Relative_Abundance*100, fill = BLASTphylum))+
-  scale_x_discrete(name = "Chemostat Culture (day)")+
-  scale_y_continuous(name = "Relative Abundance (%)")+
-  scale_fill_manual(name = "Phylum", values = phylumColors)+
-  alluvial.theme_x1
-
-Fig1F.legend.gTable = get_legend(Fig1F.plot.alluvial.ph)
-Fig1F.plot.alluvial.ph = Fig1F.plot.alluvial.ph + alluvial.theme_x1_legend0
-
-# ---- G: PCoA plot, both F, FCd01-d17, colour by day, shape by source ----
-#Bray-Curtis Dissimilarity
-graphData = ASV_TableRelAb
-
-BC_dis = vegdist(t(graphData[,c("NS0.F",
-                                "NS0.FCd01",
-                                "NS0.FCd05",
-                                "NS0.FCd09",
-                                "NS0.FCd13",
-                                "NS0.FCd17",
-                                "NS1.F",
-                                "NS1.FCd01",
-                                "NS1.FCd05",
-                                "NS1.FCd09",
-                                "NS1.FCd13",
-                                "NS1.FCd17")]))
-
-#PCoA
-PCoA = cmdscale(BC_dis, k = 2, eig = TRUE)
-Plot_PCoA = sample_Table %>%
-  right_join(tibble::rownames_to_column(data.frame(PCoA$points), var = "sample_16S") %>%
-               rename(PCo1 = X1,
-                      PCo2 = X2))
-PCoA.percentvariance = PCoA$eig/sum(PCoA$eig) *100
-
-Fig1G.plot.PCoA = ggplot()+
-  geom_point(data = Plot_PCoA, size = 7,aes(x =PCo1, y =PCo2, shape = factor(source), color = factor(day_16S)))+
-  scale_x_continuous(name = paste0("PCo1 (", signif(PCoA.percentvariance[1],3),"%)"))+
-  scale_y_continuous(name = paste0("PCo2 (", signif(PCoA.percentvariance[2],3),"%)"))+
-  scale_shape_discrete(name = "source")+
-  scale_color_discrete(name = "day")+
-  PCoA.theme+
-  coord_fixed()
+Supp_5C.plot.point = ggplot()+
+  geom_point(data = graphData2, size = 5, aes(x = X_16S, y = X_metabolites))+   
+  xlab(bquote(atop(italic(.(ASV_TableRelAb$BLASTspecies[ASV_TableRelAb$ASV_Num==graphData2$ASV[1]])),"\n% relative abundance")))+   
+  ylab(paste0("[",graphData2$metabolite[1],"]"," (mM)"))+
+  new_scale_color()+
+  geom_smooth(data = graphData2, method = "lm", se = FALSE, aes(x = X_16S, y = X_metabolites, color = label))+
+  scale_colour_discrete(name = "",
+                        labels = label_parse())+
+  point.select.theme_legendtr
 
 # ==== Figure 2 ====
-# ---- A,B: Alluvial plot, NS0 F, FCd17, colour by F, FCd17 presence and phylum ----
+# ---- A,B,C,D: Alluvial plot, NS0 and NS1 samples F, FCd01-d17, colour by F, FCd01-d17 presence and phylum----
 graphData = ASV_TableRelAb
-# select samples
-graphData = graphData[,c(1:11,which(colnames(graphData) %in% c("NS0.F","NS0.FCd17")))]
-#order by relative abundance in samples
-graphData = graphData[order(rowSums(graphData[,c("NS0.F","NS0.FCd17")]),decreasing = TRUE),]
-#order by phylum
-graphData = graphData[order(graphData$BLASTphylum),]
+# graphData = graphData[,c(1:11,grep(".F",colnames(graphData), fixed = TRUE))]
+graphData = graphData[,c(1:11,which(colnames(graphData) %in% c("NS0.F","NS0.FCd01", "NS0.FCd05", "NS0.FCd09", "NS0.FCd13", "NS0.FCd17",
+                                                               "NS1.F","NS1.FCd01", "NS1.FCd05", "NS1.FCd09", "NS1.FCd13", "NS1.FCd17")))]
 
-graphData$presenceGroupColor = interaction(graphData$NS0.F!=0,
-                                           graphData$NS0.FCd17!=0
-)
+# subset graphData by sample
+graphDataList = alply(c("NS0","NS1"), 1, function(sampleName){
+  sampleName.F = paste0(sampleName,".F")
+  
+  output = graphData[,c(1:11,grep(sampleName,colnames(graphData), fixed = TRUE))]
+  
+  # order by relative abundance in F sample and NS0.FC samples
+  output = output[order(output[,sampleName.F], decreasing = TRUE),]
+  output = output[order(rowSums(output[,grep("FC",colnames(output), fixed = TRUE)])),]
+  
+  #order by phylum
+  output = output[order(output$BLASTphylum),]
+  
+  output$presenceGroupColor = interaction(output[,sampleName.F]!=0,
+                                          rowSums(output[,grep("FC",colnames(output), fixed = TRUE)])!=0)
+  
+  #order by sample presence
+  output = output[order(output$presenceGroupColor),]
+  
+  # generate percentage data for absence/presence data
+  legendData1 = data.frame("day.0" = output[,sampleName.F],
+                           "days.1_17" = rowMeans(output[,grep("FC",colnames(output), fixed = TRUE)]))
+  legendData = aggregate(legendData1, by = list("presenceGroupColor" = interaction(legendData1$day.0!=0,
+                                                                                   legendData1$days.1_17!=0)),
+                         FUN = function(x) sum(x))
+  
+  legendData = legendData[,1:2]
+  
+  legendData$label = paste0(sprintf("%.1f",round(legendData$day.0*100,1)),"%")
+  legendData$label[legendData$day.0==0] = ""
+  
+  legendDataMelt = melt(legendData, measure.vars = 2, variable.name = "Sample", value.name = "Relative_Abundance", stringsAsFactors = FALSE)
+  legendDataMelt = legendDataMelt[legendDataMelt$Relative_Abundance!=0,]
+  legendDataMelt$day_16S = 0
+  
+  # generate legend data for absence/presence tile legend
+  legendDataTile = aggregate(legendData1, by = list("levelName" = output$presenceGroupColor), FUN = function(x) sum(x)*100)
+  
+  legendDataTile = legendDataTile[-1,]
+  legendDataTile = legendDataTile[match(absencePresence2LegendData$levelName,legendDataTile$levelName),]
+  
+  legendDataTile$y = c(2,1,0)
+  
+  legendDataTileMelt = melt(legendDataTile, id.vars = c(1,ncol(legendDataTile)), variable.name = "x")
+  legendDataTileMelt$filled = as.numeric(legendDataTileMelt$value>0)
+ 
+  legendDataTileMelt$x = gsub(".","\n",legendDataTileMelt$x, fixed = TRUE)
+  legendDataTileMelt$x = gsub("_","-",legendDataTileMelt$x, fixed = TRUE)
+  
+  legendTile = ggplot()+
+    geom_tile(data = legendDataTileMelt[legendDataTileMelt$filled == 1,],
+              color = "black",
+              size = 0.5,
+              aes(x = x, y = y, fill = levelName))+
+    # geom_text(data = legendDataMelt[legendDataMelt$filled == 1,],
+    #           size = 5.5,
+    #           aes(x = x, y = y, label = value))+
+    geom_tile(data = legendDataTileMelt[legendDataTileMelt$filled == 0,],
+              color = "black",
+              fill = "white",
+              size = 0.5,
+              aes(x = x, y = y))+
+    # geom_tile(data = legendDataTileMelt,
+    #           color = "black",
+    #           height = 0.70,
+    #           width = 0.70,
+    #           size = 0.25,
+    #           aes(x = "", y = y, fill = levelName))+
+    scale_x_discrete(position = "top")+   
+    scale_y_continuous(expand = expansion(add = 0.1))+
+    ggtitle("Identified on:")+
+    coord_fixed()+
+    legend.day2.theme
+  
+  #renumber ASVs based on reordering
+  output$ASV_Num = seq_along(output$ASV_Num)
+  output$ASV_Num = sprintf("%04d", output$ASV_Num)
+  
+  outputMelt = melt(output, measure.vars = 12:(ncol(output)-1), variable.name = "Sample", value.name = "Relative_Abundance", stringsAsFactors = FALSE)
+  outputMelt = outputMelt[outputMelt$Relative_Abundance!=0,]
+  
+  outputMelt$day_16S = sample_Table$day_16S[match(outputMelt$Sample,sample_Table$sample_16S)]
+  
+  # return(outputMelt)
+  
+  #plots
+  #colored by sample presence
+  Fig2.plot.alluvial.ap = ggplot() + 
+    geom_stratum(data = outputMelt, linetype = "solid",  aes(x = factor(day_16S), stratum = ASV_Num, y = Relative_Abundance*100, fill = presenceGroupColor))+
+    geom_errorbar(data = legendDataMelt, stat = "stratum", position = position_nudge(x = -0.3), width = 0.1, size = 1, aes(x = factor(day_16S), stratum = presenceGroupColor, y = Relative_Abundance*100))+
+    geom_text(data = legendDataMelt, stat = "stratum", nudge_x = -0.375, angle = 90, size = 6, aes(x = factor(day_16S), stratum = presenceGroupColor, y = Relative_Abundance*100, label = label, vjust = 0, hjust = 0.5))+
+    geom_flow(data = outputMelt, color = "black",aes(x = factor(day_16S),stratum = ASV_Num, alluvium = ASV_Num, y = Relative_Abundance*100, fill = presenceGroupColor))+
+    scale_x_discrete(name = "Chemostat Culture (day)", expand = expansion(add = c(0.6,0.4)))+
+    scale_y_continuous(name = "Relative Abundance (%)")+
+    # scale_fill_manual(values = absencePresenceColors3)+
+    alluvial.theme_x1_legend0
+  
+  #colored by phylum
+  Fig2.plot.alluvial.ph = ggplot() +
+    geom_stratum(data = outputMelt, linetype = "solid",  aes(x = factor(day_16S), stratum = ASV_Num, y = Relative_Abundance*100, fill = BLASTphylum))+
+    geom_flow(data = outputMelt, color = "black",aes(x = factor(day_16S),stratum = ASV_Num, alluvium = ASV_Num, y = Relative_Abundance*100, fill = BLASTphylum))+
+    scale_x_discrete(name = "Chemostat Culture (day)", expand = expansion(add = c(0.6,0.4)))+
+    scale_y_continuous(name = "Relative Abundance (%)")+
+    scale_fill_manual(name = "Phylum", values = phylumColors)+
+    alluvial.theme_x1_legend0
+  
+  return(list(Fig2.plot.alluvial.ap,Fig2.plot.alluvial.ph,legendTile))
+})
+names(graphDataList) = c("NS0","NS1")
 
-#order by sample presence
-graphData = graphData[order(graphData$presenceGroupColor),]
+Fig2A.plot.alluvial.ap = graphDataList[[1]][[1]]
+Fig2B.plot.alluvial.ph = graphDataList[[1]][[2]]
 
-# generate legend data
-# generate percentage data for absence/presence data
-legendData1 = graphData[,c("NS0.F","NS0.FCd17")]
+Fig2C.plot.alluvial.ap = graphDataList[[2]][[1]]
+Fig2D.plot.alluvial.ph = graphDataList[[2]][[2]]
 
-legendData = aggregate(legendData1, by = list("levelName" = graphData$presenceGroupColor), FUN = function(x) sum(x)*100)
-legendData = legendData[-1,]
-legendData = legendData[match(absencePresence2LegendData$levelName,legendData$levelName),]
-legendData$y = c(2,1,0)
-
-legendDataMelt = melt(legendData, id.vars = c(1,ncol(legendData)), variable.name = "x")
-legendDataMelt$filled = as.numeric(legendDataMelt$value>0)
-legendDataMelt$value = paste0(sprintf("%.1f",round(legendDataMelt$value,1)),"%")
-
-levels(legendDataMelt$x) = sampleNameLevels.3lines[levels(legendDataMelt$x)]
-
-Fig2A.legend = ggplot()+
-  geom_tile(data = legendDataMelt[legendDataMelt$filled == 1,],
-            color = "black",
-            size = 0.5,
-            aes(x = x, y = y, fill = levelName))+
-  geom_text(data = legendDataMelt[legendDataMelt$filled == 1,],
-            size = 7,
-            aes(x = x, y = y, label = value))+
-  geom_tile(data = legendDataMelt[legendDataMelt$filled == 0,],
-            color = "black",
-            fill = "white",
-            size = 0.5,
-            aes(x = x, y = y))+
-  geom_tile(data = legendDataMelt,
-            color = "black",
-            height = 0.70,
-            width = 0.70,
-            size = 0.25,
-            aes(x = "", y = y, fill = levelName))+
-  scale_x_discrete(position = "top", limits = c("",levels(legendDataMelt$x)))+   
-  scale_y_continuous(expand = expansion(add = 0.1))+
-  ggtitle("Identified in:")+
-  coord_fixed()+
-  legend.chemostat2.theme
-
-#renumber ASVs based on reordering
-graphData$ASV_Num = seq_along(graphData$ASV_Num)
-graphData$ASV_Num = sprintf("%03d", graphData$ASV_Num)
-
-graphDataMelt = melt(graphData, measure.vars = 12:(ncol(graphData)-1), variable.name = "Sample", value.name = "Relative_Abundance", stringsAsFactors = FALSE)
-
-graphDataMelt = graphDataMelt[graphDataMelt$Relative_Abundance!=0,]
-levels(graphDataMelt$Sample) = sampleNameLevels.3lines[levels(graphDataMelt$Sample)]
-
-#plots
-#colored by sample presence
-Fig2A.plot.alluvial.ap = ggplot() + 
-  theme_bw()+
-  geom_stratum(data = graphDataMelt, linetype = "solid", aes(x = Sample, stratum = ASV_Num, y = Relative_Abundance*100, fill = presenceGroupColor))+
-  geom_flow(data = graphDataMelt, color = "black",aes(x = Sample,stratum = ASV_Num, alluvium = ASV_Num, y = Relative_Abundance*100, fill = presenceGroupColor))+
-  scale_y_continuous(name = "Relative Abundance (%)")+
-  alluvial.theme_x0_legend0
-
-#colored by phylum
-Fig2B.plot.alluvial.ph = ggplot() + 
-  theme_bw()+
-  geom_stratum(data = graphDataMelt, linetype = "solid", aes(x = Sample, stratum = ASV_Num, y = Relative_Abundance*100, fill = BLASTphylum))+
-  geom_flow(data = graphDataMelt, color = "black",aes(x = Sample,stratum = ASV_Num, alluvium = ASV_Num, y = Relative_Abundance*100, fill = BLASTphylum))+
-  scale_y_continuous(name = "Relative Abundance (%)")+
-  scale_fill_manual(name = "Phylum", values = phylumColors)+
-  alluvial.theme_x0
-
-Fig2B.legend.gTable = get_legend(Fig2B.plot.alluvial.ph)
-Fig2B.plot.alluvial.ph = Fig2B.plot.alluvial.ph + alluvial.theme_x0_legend0
-
-# ---- C,D: Alluvial plot, NS1 F, FCd17, colour by F, FCd17 presence and phylum ----
-graphData = ASV_TableRelAb
-# select samples
-graphData = graphData[,c(1:11,which(colnames(graphData) %in% c("NS1.F","NS1.FCd17")))]
-#order by relative abundance in samples
-graphData = graphData[order(rowSums(graphData[,c("NS1.F","NS1.FCd17")]),decreasing = TRUE),]
-#order by phylum
-graphData = graphData[order(graphData$BLASTphylum),]
-
-graphData$presenceGroupColor = interaction(graphData$NS1.F!=0,
-                                           graphData$NS1.FCd17!=0
-)
-
-#order by sample presence
-graphData = graphData[order(graphData$presenceGroupColor),]
-
-# generate legend data
-# generate percentage data for absence/presence data
-legendData1 = graphData[,c("NS1.F","NS1.FCd17")]
-
-legendData = aggregate(legendData1, by = list("levelName" = graphData$presenceGroupColor), FUN = function(x) sum(x)*100)
-legendData = legendData[-1,]
-legendData = legendData[match(absencePresence2LegendData$levelName,legendData$levelName),]
-legendData$y = c(2,1,0)
-
-legendDataMelt = melt(legendData, id.vars = c(1,ncol(legendData)), variable.name = "x")
-legendDataMelt$filled = as.numeric(legendDataMelt$value>0)
-legendDataMelt$value = paste0(sprintf("%.1f",round(legendDataMelt$value,1)),"%")
-
-levels(legendDataMelt$x) = sampleNameLevels.3lines[levels(legendDataMelt$x)]
-
-Fig2C.legend = ggplot()+
-  geom_tile(data = legendDataMelt[legendDataMelt$filled == 1,],
-            color = "black",
-            size = 0.5,
-            aes(x = x, y = y, fill = levelName))+
-  geom_text(data = legendDataMelt[legendDataMelt$filled == 1,],
-            size = 7,
-            aes(x = x, y = y, label = value))+
-  geom_tile(data = legendDataMelt[legendDataMelt$filled == 0,],
-            color = "black",
-            fill = "white",
-            size = 0.5,
-            aes(x = x, y = y))+
-  geom_tile(data = legendDataMelt,
-            color = "black",
-            height = 0.70,
-            width = 0.70,
-            size = 0.25,
-            aes(x = "", y = y, fill = levelName))+
-  scale_x_discrete(position = "top", limits = c("",levels(legendDataMelt$x)))+   
-  scale_y_continuous(expand = expansion(add = 0.1))+
-  ggtitle("Identified in:")+
-  coord_fixed()+
-  legend.chemostat2.theme
-
-#renumber ASVs based on reordering
-graphData$ASV_Num = seq_along(graphData$ASV_Num)
-graphData$ASV_Num = sprintf("%03d", graphData$ASV_Num)
-
-graphDataMelt = melt(graphData, measure.vars = 12:(ncol(graphData)-1), variable.name = "Sample", value.name = "Relative_Abundance", stringsAsFactors = FALSE)
-graphDataMelt = graphDataMelt[graphDataMelt$Sample %in% c("NS1.F","NS1.FCd17"),]
-
-graphDataMelt = graphDataMelt[graphDataMelt$Relative_Abundance!=0,]
-levels(graphDataMelt$Sample) = sampleNameLevels.3lines[levels(graphDataMelt$Sample)]
-
-#plots
-#colored by sample presence
-Fig2C.plot.alluvial.ap = ggplot() + 
-  theme_bw()+
-  geom_stratum(data = graphDataMelt, linetype = "solid", aes(x = Sample, stratum = ASV_Num, y = Relative_Abundance*100, fill = presenceGroupColor))+
-  geom_flow(data = graphDataMelt, color = "black",aes(x = Sample,stratum = ASV_Num, alluvium = ASV_Num, y = Relative_Abundance*100, fill = presenceGroupColor))+
-  scale_y_continuous(name = "Relative Abundance (%)")+
-  alluvial.theme_x0_legend0
-
-#colored by phylum
-Fig2D.plot.alluvial.ph = ggplot() + 
-  theme_bw()+
-  geom_stratum(data = graphDataMelt, linetype = "solid", aes(x = Sample, stratum = ASV_Num, y = Relative_Abundance*100, fill = BLASTphylum))+
-  geom_flow(data = graphDataMelt, color = "black",aes(x = Sample,stratum = ASV_Num, alluvium = ASV_Num, y = Relative_Abundance*100, fill = BLASTphylum))+
-  scale_y_continuous(name = "Relative Abundance (%)")+
-  scale_fill_manual(name = "Phylum", values = phylumColors)+
-  alluvial.theme_x0
-
-Fig2D.legend.gTable = get_legend(Fig2D.plot.alluvial.ph)
-Fig2D.plot.alluvial.ph = Fig2D.plot.alluvial.ph + alluvial.theme_x0_legend0
+Fig2.legend.ap = graphDataList[[1]][[3]]
+Fig2.ph.legend.gTable = phylum.legend.gTable
 
 # ==== Figure 3 ====
-# ---- A,B: Alluvial plot, NS0 F, FCd17, DCd00, colour by F, FCd17, DCd00 presence, and phylum ----
+# ---- A,B,C,D: Alluvial plot, NS0 and NS1 samples F, FCd17, colour by F, FCd17 presence and phylum ----
 graphData = ASV_TableRelAb
-# select samples
-graphData = graphData[,c(1:11,which(colnames(graphData) %in% c("NS0.F","NS0.DCd00","NS0.FCd17")))]
-#order by relative abundance in NS0 samples
-graphData = graphData[order(rowSums(graphData[,c("NS0.F", "NS0.FCd17")]),decreasing = TRUE),]
+# graphData = graphData[,c(1:11,grep(".F",colnames(graphData), fixed = TRUE))]
+graphData = graphData[,c(1:11,which(colnames(graphData) %in% c("NS0.F","NS0.FCd17",
+                                                               "NS1.F","NS1.FCd17")))]
 
-#order by phylum
-graphData = graphData[order(graphData$BLASTphylum),]
+# subset graphData by sample
+graphDataList = alply(c("NS0","NS1"), 1, function(sampleName){
+  sampleName.F = paste0(sampleName,".F")
+  sampleName.FCd17 = paste0(sampleName,".FCd17")
+  
+  output = graphData[,c(1:11,grep(sampleName,colnames(graphData), fixed = TRUE))]
+  
+  # order by relative abundance in F sample and FCd17 samples
+  output = output[order(output[,sampleName.F], decreasing = TRUE),]
+  output = output[order(output[,sampleName.FCd17], decreasing = TRUE),]
+  
+  #order by phylum
+  output = output[order(output$BLASTphylum),]
+  
+  output$presenceGroupColor = interaction(output[,sampleName.F]!=0,
+                                          output[,sampleName.FCd17]!=0)
+  
+  #order by sample presence
+  output = output[order(output$presenceGroupColor),]
+  
+  # generate percentage data for absence/presence data
+  legendData1 = data.frame(output[,c(sampleName.F,sampleName.FCd17)])
+  
+  # return(legendData1)
+  
+  legendData = aggregate(legendData1, by = list("presenceGroupColor" = interaction(legendData1[,sampleName.F]!=0,
+                                                                                   legendData1[,sampleName.FCd17]!=0)),
+                         FUN = function(x) sum(x))
+  
+  legendData = legendData[,1:2]
+  
+  legendData$label = paste0(sprintf("%.1f",round(legendData[,sampleName.F]*100,1)),"%")
+  legendData$label[legendData[,sampleName.F]==0] = ""
+  
+  legendDataMelt = melt(legendData, measure.vars = 2, variable.name = "Sample", value.name = "Relative_Abundance", stringsAsFactors = FALSE)
+  legendDataMelt = legendDataMelt[legendDataMelt$Relative_Abundance!=0,]
+  legendDataMelt$day_16S = 0
+  legendDataMelt$Sample = sampleNameLevels.3lines[as.character(legendDataMelt$Sample)]
+  # return(legendDataMelt)
+  
+  # generate legend data for absence/presence tile legend
+  legendDataTile = aggregate(legendData1, by = list("levelName" = output$presenceGroupColor), FUN = function(x) sum(x)*100)
+  
+  legendDataTile = legendDataTile[-1,]
+  legendDataTile = legendDataTile[match(absencePresence2LegendData$levelName,legendDataTile$levelName),]
+  
+  legendDataTile$y = c(2,1,0)
+  
+  # return(legendDataTile)
+  
+  legendDataTileMelt = melt(legendDataTile, id.vars = c(1,ncol(legendDataTile)), variable.name = "x")
+  legendDataTileMelt$filled = as.numeric(legendDataTileMelt$value>0)
+  
+  levels(legendDataTileMelt$x) = sampleNameLevels.3lines[levels(legendDataTileMelt$x)]
+  
+  # legendDataTileMelt$x = gsub(".","\n",legendDataTileMelt$x, fixed = TRUE)
+  # legendDataTileMelt$x = gsub("_","-",legendDataTileMelt$x, fixed = TRUE)
+  # return(legendDataTileMelt)
+  
+  legendTile = ggplot()+
+    geom_tile(data = legendDataTileMelt[legendDataTileMelt$filled == 1,],
+              color = "black",
+              size = 0.5,
+              aes(x = x, y = y, fill = levelName))+
+    # geom_text(data = legendDataMelt[legendDataMelt$filled == 1,],
+    #           size = 5.5,
+    #           aes(x = x, y = y, label = value))+
+    geom_tile(data = legendDataTileMelt[legendDataTileMelt$filled == 0,],
+              color = "black",
+              fill = "white",
+              size = 0.5,
+              aes(x = x, y = y))+
+    # geom_tile(data = legendDataTileMelt,
+    #           color = "black",
+    #           height = 0.70,
+    #           width = 0.70,
+    #           size = 0.25,
+    #           aes(x = "", y = y, fill = levelName))+
+    scale_x_discrete(position = "top")+   
+    scale_y_continuous(expand = expansion(add = 0.1))+
+    ggtitle("Identified in:")+
+    coord_fixed()+
+    legend.day2.theme
+  
+  #renumber ASVs based on reordering
+  output$ASV_Num = seq_along(output$ASV_Num)
+  output$ASV_Num = sprintf("%04d", output$ASV_Num)
+  
+  outputMelt = melt(output, measure.vars = 12:(ncol(output)-1), variable.name = "Sample", value.name = "Relative_Abundance", stringsAsFactors = FALSE)
+  outputMelt = outputMelt[outputMelt$Relative_Abundance!=0,]
+  
+  outputMelt$day_16S = sample_Table$day_16S[match(outputMelt$Sample,sample_Table$sample_16S)]
+  
+  levels(outputMelt$Sample) = sampleNameLevels.3lines[levels(outputMelt$Sample)]
+  
+  # return(outputMelt)
+  
+  #plots
+  #colored by sample presence
+  Fig3.plot.alluvial.ap = ggplot() + 
+    geom_stratum(data = outputMelt, linetype = "solid",  aes(x = Sample, stratum = ASV_Num, y = Relative_Abundance*100, fill = presenceGroupColor))+
+    geom_errorbar(data = legendDataMelt, stat = "stratum", position = position_nudge(x = -0.3), width = 0.1, size = 1, aes(x = Sample, stratum = presenceGroupColor, y = Relative_Abundance*100))+
+    geom_text(data = legendDataMelt, stat = "stratum", nudge_x = -0.375, angle = 90, size = 6, aes(x = Sample, stratum = presenceGroupColor, y = Relative_Abundance*100, label = label, vjust = 0, hjust = 0.5))+
+    geom_flow(data = outputMelt, color = "black",aes(x = Sample,stratum = ASV_Num, alluvium = ASV_Num, y = Relative_Abundance*100, fill = presenceGroupColor))+
+    scale_x_discrete(name = "Chemostat Culture (day)", expand = expansion(add = c(0.6,0.4)))+
+    scale_y_continuous(name = "Relative Abundance (%)")+
+    # scale_fill_manual(values = absencePresenceColors3)+
+    alluvial.theme_x1_legend0
+  
+  #colored by phylum
+  Fig3.plot.alluvial.ph = ggplot() +
+    geom_stratum(data = outputMelt, linetype = "solid",  aes(x = Sample, stratum = ASV_Num, y = Relative_Abundance*100, fill = BLASTphylum))+
+    geom_flow(data = outputMelt, color = "black",aes(x = Sample,stratum = ASV_Num, alluvium = ASV_Num, y = Relative_Abundance*100, fill = BLASTphylum))+
+    scale_x_discrete(name = "Chemostat Culture (day)")+
+    scale_y_continuous(name = "Relative Abundance (%)")+
+    scale_fill_manual(name = "Phylum", values = phylumColors)+
+    alluvial.theme_x1_legend0
+  
+  return(list(Fig3.plot.alluvial.ap,Fig3.plot.alluvial.ph,legendTile))
+})
+names(graphDataList) = c("NS0","NS1")
 
-graphData$NS0.DCd00[graphData$NS0.DCd00!=0] = 1/sum(graphData$NS0.DCd00!=0)
+Fig3A.plot.alluvial.ap = graphDataList[[1]][[1]]
+Fig3B.plot.alluvial.ph = graphDataList[[1]][[2]]
 
-graphData$presenceGroupColor = interaction(graphData$NS0.F!=0,
-                                           graphData$NS0.DCd00!=0,
-                                           graphData$NS0.FCd17!=0
-)
+Fig3C.plot.alluvial.ap = graphDataList[[2]][[1]]
+Fig3D.plot.alluvial.ph = graphDataList[[2]][[2]]
 
-#order by sample presence
-graphData = graphData[order(graphData$presenceGroupColor),]
+Fig3.legend.ap = graphDataList[[1]][[3]]
+Fig3.legend.ap = Fig3.legend.ap + scale_x_discrete(position = "top", labels=c("Fecal", "Fecal\nChemostat"))
 
-# generate legend data
-# generate percentage data for absence/presence data
-legendData1 = graphData[,c("NS0.F", "NS0.DCd00", "NS0.FCd17")]
+Fig3.ph.legend.gTable = phylum.legend.gTable
 
-legendData = aggregate(legendData1, by = list("levelName" = graphData$presenceGroupColor), FUN = function(x) sum(x)*100)
-legendData = legendData[-1,]
-legendData = legendData[match(absencePresence3LegendData$levelName,legendData$levelName),]
-legendData$y = c(6,5,4,3,2,1,0)
-
-legendDataMelt = melt(legendData, id.vars = c(1,ncol(legendData)), variable.name = "x")
-legendDataMelt$filled = as.numeric(legendDataMelt$value>0)
-legendDataMelt$value = paste0(sprintf("%.1f",round(legendDataMelt$value,1)),"%")
-
-levels(legendDataMelt$x) = sampleNameLevels.3lines[levels(legendDataMelt$x)]
-
-Fig3A.legend = ggplot()+
-  geom_tile(data = legendDataMelt[legendDataMelt$filled == 1,],
-            color = "black",
-            size = 0.5,
-            aes(x = x, y = y, fill = levelName))+
-  geom_text(data = legendDataMelt[legendDataMelt$filled == 1,],
-            size = 5.5,
-            aes(x = x, y = y, label = value))+
-  geom_tile(data = legendDataMelt[legendDataMelt$filled == 0,],
-            color = "black",
-            fill = "white",
-            size = 0.5,
-            aes(x = x, y = y))+
-  geom_tile(data = legendDataMelt,
-            color = "black",
-            height = 0.70,
-            width = 0.70,
-            size = 0.25,
-            aes(x = "", y = y, fill = levelName))+
-  scale_x_discrete(position = "top", limits = c("",levels(legendDataMelt$x)))+
-  scale_y_continuous(expand = expansion(add = 0.1))+
-  ggtitle("Identified in:")+
-  coord_fixed()+
-  legend.chemostat3.theme
-
-#renumber ASVs based on reordering
-graphData$ASV_Num = seq_along(graphData$ASV_Num)
-graphData$ASV_Num = sprintf("%03d", graphData$ASV_Num)
-
-graphDataMelt = melt(graphData, measure.vars = 12:(ncol(graphData)-1), variable.name = "Sample", value.name = "Relative_Abundance", stringsAsFactors = FALSE)
-
-levels(graphDataMelt$Sample) = sampleNameLevels.3lines[levels(graphDataMelt$Sample)]
-graphDataMelt$Sample = factor(graphDataMelt$Sample, levels = levels(graphDataMelt$Sample)[c(1,3,2)])
-
-graphDataMelt = graphDataMelt[graphDataMelt$Relative_Abundance!=0,]
-
-#plots
-#colored by sample presence
-Fig3A.plot.alluvial.ap = ggplot() +
-  geom_stratum(data = graphDataMelt, linetype = "solid",  aes(x = Sample, stratum = ASV_Num, y = Relative_Abundance*100, fill = presenceGroupColor))+
-  geom_flow(data = graphDataMelt, color = "black",aes(x = Sample,stratum = ASV_Num, alluvium = ASV_Num, y = Relative_Abundance*100, fill = presenceGroupColor))+
-  scale_y_continuous(name = "Relative Abundance (%)")+
-  alluvial.theme_x0_legend0
-
-#colored by phylum
-Fig3B.plot.alluvial.ph = ggplot() +
-  geom_stratum(data = graphDataMelt, linetype = "solid",  aes(x = Sample, stratum = ASV_Num, y = Relative_Abundance*100, fill = BLASTphylum))+
-  geom_flow(data = graphDataMelt, color = "black",aes(x = Sample,stratum = ASV_Num, alluvium = ASV_Num, y = Relative_Abundance*100, fill = BLASTphylum))+
-  scale_y_continuous(name = "Relative Abundance (%)")+
-  scale_fill_manual(name = "Phylum", values = phylumColors)+
-  alluvial.theme_x0
-
-Fig3B.legend.gTable = get_legend(Fig3B.plot.alluvial.ph)
-Fig3B.plot.alluvial.ph = Fig3B.plot.alluvial.ph + alluvial.theme_x0_legend0
-
-
-# ---- C,D: Alluvial plot, NS1 F, FCd17, DCd00, colour by F, FCd17, DCd00 presence, and phylum ----
+# ==== Figure 4 ====
+# ---- A,B,C,D: Alluvial plot, NS0 and NS1 samples F, FCd17, DCd00, colour by F, FCd17, DCd00 presence, and phylum ----
 graphData = ASV_TableRelAb
-# select samples
-graphData = graphData[,c(1:11,which(colnames(graphData) %in% c("NS1.F","NS1.DCd00","NS1.FCd17")))]
-#order by relative abundance in NS1 samples
-graphData = graphData[order(rowSums(graphData[,c("NS1.F", "NS1.FCd17")]),decreasing = TRUE),]
+graphData = graphData[,c(1:11,which(colnames(graphData) %in% c("NS0.F","NS0.DCd00","NS0.FCd17",
+                                                               "NS1.F","NS1.DCd00","NS1.FCd17")))]
 
-#order by phylum
-graphData = graphData[order(graphData$BLASTphylum),]
+# subset graphData by sample
+graphDataList = alply(c("NS0","NS1"), 1, function(sampleName){
+  sampleName.F = paste0(sampleName,".F")
+  sampleName.DCd00 = paste0(sampleName,".DCd00")
+  sampleName.FCd17 = paste0(sampleName,".FCd17")
+  
+  output = graphData[,c(1:11,grep(sampleName,colnames(graphData), fixed = TRUE))]
+  # return(output)
+  #order by phylum
+  # output = output[order(output[,sampleName.FCd17]),]
+  output = output[order(output$BLASTphylum),]
+  
+  output[,sampleName.DCd00][output[,sampleName.DCd00]!=0] = 1/sum(output[,sampleName.DCd00]!=0)
+  
+  output$presenceGroupColor = interaction(output[,sampleName.F]!=0,
+                                          output[,sampleName.DCd00]!=0
+  )
+  
+  output$presenceGroupColor2 = interaction(output[,sampleName.F]!=0,
+                                          output[,sampleName.DCd00]!=0,
+                                          output[,sampleName.FCd17]!=0
+  )
+  
+  #order by sample presence
+  output = output[order(output$presenceGroupColor2),]
+  output = output[order(output$presenceGroupColor),]
+  
+  # generate percentage data for absence/presence data
+  legendData1 = data.frame(output[,c(sampleName.F,sampleName.DCd00)])
+  legendData = aggregate(legendData1, by = list("presenceGroupColor" = interaction(output[,sampleName.F]!=0,
+                                                                                   output[,sampleName.DCd00]!=0)),
+                         FUN = function(x) sum(x))
+  # return(legendData)
+  legendData = legendData[,1:2]
+  
+  # return(legendData)
+  
+  legendData$label = paste0(sprintf("%.1f",round(legendData[,sampleName.F]*100,1)),"%")
+  legendData$label[legendData[,sampleName.F]==0] = ""
+  
+  legendDataMelt = melt(legendData, measure.vars = 2, variable.name = "Sample", value.name = "Relative_Abundance", stringsAsFactors = FALSE)
+  legendDataMelt = legendDataMelt[legendDataMelt$Relative_Abundance!=0,]
+  legendDataMelt$day_16S = 0
+  
+  
+  legendDataMelt$Sample = as.character(legendDataMelt$Sample)
+  legendDataMelt$Sample = sampleNameLevels.3lines[legendDataMelt$Sample]
+  # return(legendDataMelt)
+  
+  
+  # generate legend data for absence/presence tile legend
+  legendData2 = data.frame(output[,c(sampleName.F,sampleName.DCd00,sampleName.FCd17)])
+  legendDataTile = aggregate(legendData2, by = list("levelName" = output$presenceGroupColor2), FUN = function(x) sum(x)*100)
+  # return(legendDataTile)
+  legendDataTile = legendDataTile[-1,]
+  legendDataTile = legendDataTile[match(absencePresence3LegendData$levelName,legendDataTile$levelName),]
+  
+  legendDataTile$y = c(6,5,4,3,2,1,0)
+  
+  legendDataTileMelt = melt(legendDataTile, id.vars = c(1,ncol(legendDataTile)), variable.name = "x")
+  legendDataTileMelt$x = as.character(legendDataTileMelt$x)
+  legendDataTileMelt$x = sampleNameLevels.3lines[legendDataTileMelt$x]
+  legendDataTileMelt$x = factor(legendDataTileMelt$x)
+  legendDataTileMelt$x = factor(as.character(legendDataTileMelt$x),levels(legendDataTileMelt$x)[c(1,3,2)])
+  
+  legendDataTileMelt$filled = as.numeric(legendDataTileMelt$value>0)
+  
+  # legendDataTileMelt$x = gsub(".","\n",legendDataTileMelt$x, fixed = TRUE)
+  # legendDataTileMelt$x = gsub("_","-",legendDataTileMelt$x, fixed = TRUE)
+  # return(legendDataTileMelt)
+  legendTile = ggplot()+
+    geom_tile(data = legendDataTileMelt[legendDataTileMelt$filled == 1,],
+              color = "black",
+              size = 0.5,
+              aes(x = x, y = y, fill = levelName))+
+    # geom_text(data = legendDataMelt[legendDataMelt$filled == 1,],
+    #           size = 5.5,
+    #           aes(x = x, y = y, label = value))+
+    geom_tile(data = legendDataTileMelt[legendDataTileMelt$filled == 0,],
+              color = "black",
+              fill = "white",
+              size = 0.5,
+              aes(x = x, y = y))+
+    # geom_tile(data = legendDataTileMelt,
+    #           color = "black",
+    #           height = 0.70,
+    #           width = 0.70,
+    #           size = 0.25,
+    #           aes(x = "", y = y, fill = levelName))+
+    scale_x_discrete(position = "top")+   
+    scale_y_continuous(expand = expansion(add = 0.1))+
+    ggtitle("Identified in:")+
+    coord_fixed()+
+    legend.chemostat3.theme
+  
+  #renumber ASVs based on reordering
+  output$ASV_Num = seq_along(output$ASV_Num)
+  output$ASV_Num = sprintf("%04d", output$ASV_Num)
+  
+  outputMelt = melt(output, measure.vars = 12:(ncol(output)-2), variable.name = "Sample", value.name = "Relative_Abundance", stringsAsFactors = FALSE)
+  outputMelt = outputMelt[outputMelt$Relative_Abundance!=0,]
+  
+  outputMelt$day_16S = sample_Table$day_16S[match(outputMelt$Sample,sample_Table$sample_16S)]
+  
+  levels(outputMelt$Sample) = sampleNameLevels.3lines[levels(outputMelt$Sample)]
+  outputMelt$Sample = factor(outputMelt$Sample, levels = levels(outputMelt$Sample)[c(1,3,2)])
+  # return(outputMelt)
+  
+  #plots
+  #colored by sample presence
+  Fig4.plot.alluvial.ap = ggplot() + 
+    geom_stratum(data = outputMelt, linetype = "solid",  aes(x = Sample, stratum = ASV_Num, y = Relative_Abundance*100, fill = presenceGroupColor2))+
+    geom_errorbar(data = legendDataMelt, stat = "stratum", position = position_nudge(x = -0.3), width = 0.1, size = 1, aes(x = Sample, stratum = presenceGroupColor, y = Relative_Abundance*100))+
+    geom_text(data = legendDataMelt, stat = "stratum", nudge_x = -0.375, angle = 90, size = 6, aes(x = Sample, stratum = presenceGroupColor, y = Relative_Abundance*100, label = label, vjust = 0, hjust = 0.5))+
+    geom_flow(data = outputMelt, color = "black",aes(x = Sample,stratum = ASV_Num, alluvium = ASV_Num, y = Relative_Abundance*100, fill = presenceGroupColor2))+
+    scale_x_discrete(name = "Chemostat Culture (day)", expand = expansion(add = c(0.6,0.6)))+
+    scale_y_continuous(name = "Relative Abundance (%)")+
+    # scale_fill_manual(values = absencePresenceColors3)+
+    alluvial.theme_x1_legend0
+  
+  #colored by phylum
+  Fig4.plot.alluvial.ph = ggplot() +
+    geom_stratum(data = outputMelt, linetype = "solid",  aes(x = Sample, stratum = ASV_Num, y = Relative_Abundance*100, fill = BLASTphylum))+
+    geom_flow(data = outputMelt, color = "black",aes(x = Sample,stratum = ASV_Num, alluvium = ASV_Num, y = Relative_Abundance*100, fill = BLASTphylum))+
+    scale_x_discrete(name = "Chemostat Culture (day)", expand = expansion(add = c(0.6,0.6)))+
+    scale_y_continuous(name = "Relative Abundance (%)")+
+    scale_fill_manual(name = "Phylum", values = phylumColors)+
+    alluvial.theme_x1_legend0
+  
+  return(list(Fig4.plot.alluvial.ap,Fig4.plot.alluvial.ph,legendTile))
+})
 
-graphData$NS1.DCd00[graphData$NS1.DCd00!=0] = 1/sum(graphData$NS1.DCd00!=0)
+names(graphDataList) = c("NS0","NS1")
 
-graphData$presenceGroupColor = interaction(graphData$NS1.F!=0,
-                                           graphData$NS1.DCd00!=0,
-                                           graphData$NS1.FCd17!=0
-)
+Fig4A.plot.alluvial.ap = graphDataList[[1]][[1]]
+Fig4B.plot.alluvial.ph = graphDataList[[1]][[2]]
 
-#order by sample presence
-graphData = graphData[order(graphData$presenceGroupColor),]
+Fig4C.plot.alluvial.ap = graphDataList[[2]][[1]]
+Fig4D.plot.alluvial.ph = graphDataList[[2]][[2]]
 
-# generate legend data
-# generate percentage data for absence/presence data
-legendData1 = graphData[,c("NS1.F", "NS1.DCd00", "NS1.FCd17")]
+Fig4.legend.ap = graphDataList[[1]][[3]]
+Fig4.legend.ap = Fig4.legend.ap + scale_x_discrete(position = "top", labels=c("Fecal", "Isolate\nLibrary", "Fecal\nChemostat"))
 
-legendData = aggregate(legendData1, by = list("levelName" = graphData$presenceGroupColor), FUN = function(x) sum(x)*100)
-legendData = legendData[-1,]
-legendData = legendData[match(absencePresence3LegendData$levelName,legendData$levelName),]
-legendData$y = c(6,5,4,3,2,1,0)
-
-legendDataMelt = melt(legendData, id.vars = c(1,ncol(legendData)), variable.name = "x")
-legendDataMelt$filled = as.numeric(legendDataMelt$value>0)
-legendDataMelt$value = paste0(sprintf("%.1f",round(legendDataMelt$value,1)),"%")
-
-levels(legendDataMelt$x) = sampleNameLevels.3lines[levels(legendDataMelt$x)]
-
-Fig3C.legend = ggplot()+
-  geom_tile(data = legendDataMelt[legendDataMelt$filled == 1,],
-            color = "black",
-            size = 0.5,
-            aes(x = x, y = y, fill = levelName))+
-  geom_text(data = legendDataMelt[legendDataMelt$filled == 1,],
-            size = 5.5,
-            aes(x = x, y = y, label = value))+
-  geom_tile(data = legendDataMelt[legendDataMelt$filled == 0,],
-            color = "black",
-            fill = "white",
-            size = 0.5,
-            aes(x = x, y = y))+
-  geom_tile(data = legendDataMelt,
-            color = "black",
-            height = 0.70,
-            width = 0.70,
-            size = 0.25,
-            aes(x = "", y = y, fill = levelName))+
-  scale_x_discrete(position = "top", limits = c("",levels(legendDataMelt$x)))+
-  scale_y_continuous(expand = expansion(add = 0.1))+
-  ggtitle("Identified in:")+
-  coord_fixed()+
-  legend.chemostat3.theme
-
-#renumber ASVs based on reordering
-graphData$ASV_Num = seq_along(graphData$ASV_Num)
-graphData$ASV_Num = sprintf("%03d", graphData$ASV_Num)
-
-graphDataMelt = melt(graphData, measure.vars = 12:(ncol(graphData)-1), variable.name = "Sample", value.name = "Relative_Abundance", stringsAsFactors = FALSE)
-
-levels(graphDataMelt$Sample) = sampleNameLevels.3lines[levels(graphDataMelt$Sample)]
-graphDataMelt$Sample = factor(graphDataMelt$Sample, levels = levels(graphDataMelt$Sample)[c(1,3,2)])
-
-graphDataMelt = graphDataMelt[graphDataMelt$Relative_Abundance!=0,]
-
-#plots
-#colored by sample presence
-Fig3C.plot.alluvial.ap = ggplot() +
-  geom_stratum(data = graphDataMelt, linetype = "solid",  aes(x = Sample, stratum = ASV_Num, y = Relative_Abundance*100, fill = presenceGroupColor))+
-  geom_flow(data = graphDataMelt, color = "black",aes(x = Sample,stratum = ASV_Num, alluvium = ASV_Num, y = Relative_Abundance*100, fill = presenceGroupColor))+
-  scale_y_continuous(name = "Relative Abundance (%)")+
-  alluvial.theme_x0_legend0
-
-#colored by phylum
-Fig3D.plot.alluvial.ph = ggplot() +
-  geom_stratum(data = graphDataMelt, linetype = "solid",  aes(x = Sample, stratum = ASV_Num, y = Relative_Abundance*100, fill = BLASTphylum))+
-  geom_flow(data = graphDataMelt, color = "black",aes(x = Sample,stratum = ASV_Num, alluvium = ASV_Num, y = Relative_Abundance*100, fill = BLASTphylum))+
-  scale_y_continuous(name = "Relative Abundance (%)")+
-  scale_fill_manual(name = "Phylum", values = phylumColors)+
-  alluvial.theme_x0
-
-Fig3D.legend.gTable = get_legend(Fig3D.plot.alluvial.ph)
-Fig3D.plot.alluvial.ph = Fig3D.plot.alluvial.ph + alluvial.theme_x0_legend0
+Fig4.ph.legend.gTable = phylum.legend.gTable
 
 # ---- E: Histogram, percentage of species with binned prevalences in CHILD study samples, faceted by in CHILD vs. in CHILD and isolates ----
 # load CHILD 12 month ASV table
@@ -2473,7 +2872,7 @@ graphData2 = CHILD_mergedASV_Table_SpeciesCol
 graphData2$group = "In CHILD study"
 graphData = rbind(graphData1,graphData2)
 
-Fig3E.histogram = ggplot()+
+Fig4E.histogram = ggplot()+
   geom_histogram(data = graphData, bins = 100, position = "dodge", aes(x = CHILD_prevalence,y = after_stat(density)*after_stat(width)*100, fill = group))+
   geom_density(data = graphData,bounds = c(0, 1), aes(x = CHILD_prevalence, color = group))+
   scale_color_discrete(guide = "none")+
@@ -2482,7 +2881,7 @@ Fig3E.histogram = ggplot()+
   scale_y_continuous(name = "Species in group (%)")+
   histogram.theme
 
-Fig3E.histogramPsuedoLog.sigma1=
+Fig4E.histogramPseudoLog.sigma1=
 ggplot()+
   geom_histogram(data = graphData, bins = 100, position = "dodge", aes(x = CHILD_prevalence,y = after_stat(density)*after_stat(width)*100, fill = group))+
   geom_density(data = graphData,bounds = c(0, 1), trim = TRUE, adjust = 5, aes(x = CHILD_prevalence, color = group))+
@@ -2494,7 +2893,7 @@ ggplot()+
                      breaks = c(40,20,10,5,2.5,1,0.5,0))+
   histogram.theme
 
-Fig3E.histogramPsuedoLog.sigma0.2=
+Fig4E.histogramPseudoLog.sigma0.2=
   ggplot()+
   geom_histogram(data = graphData, bins = 100, position = "dodge", aes(x = CHILD_prevalence,y = after_stat(density)*after_stat(width)*100, fill = group))+
   geom_density(data = graphData,bounds = c(0, 1), trim = TRUE, adjust = 5, aes(x = CHILD_prevalence, color = group))+
@@ -2506,7 +2905,7 @@ Fig3E.histogramPsuedoLog.sigma0.2=
                      breaks = c(40,20,10,5,2.5,1,0.5, 0.2,0))+
   histogram.theme
 
-Fig3E.histogramPsuedoLog.sigma0.1=
+Fig4E.histogramPseudoLog.sigma0.1=
   ggplot()+
   geom_histogram(data = graphData, bins = 100, position = "dodge", aes(x = CHILD_prevalence,y = after_stat(density)*after_stat(width)*100, fill = group))+
   geom_density(data = graphData,bounds = c(0, 1), trim = TRUE, adjust = 5, aes(x = CHILD_prevalence, color = group))+
@@ -2518,7 +2917,7 @@ Fig3E.histogramPsuedoLog.sigma0.1=
                      breaks = c(40,20,10,5,2.5,1,0.5, 0.2,0.1,0))+
   histogram.theme
 
-# Fig3E.histogramAxisBreak=
+# Fig4E.histogramAxisBreak=
 #   ggplot()+
 #   geom_histogram(data = graphData, bins = 100, position = "dodge", aes(x = CHILD_prevalence,y = after_stat(density)*after_stat(width)*100, fill = group))+
 #   geom_density(data = graphData,bounds = c(0, 1), trim = TRUE, adjust = 3, aes(x = CHILD_prevalence, color = group))+
@@ -2537,101 +2936,125 @@ Fig3E.histogramPsuedoLog.sigma0.1=
 #       legend.background = element_blank(),
 #       legend.key = element_blank())
 # 
-# test = get_legend(Fig3E.histogramAxisBreak)
+# test = get_legend(Fig4E.histogramAxisBreak)
 # 
-# Fig3E.histogramAxisBreak = Fig3E.histogramAxisBreak+
+# Fig4E.histogramAxisBreak = Fig4E.histogramAxisBreak+
 #   theme(legend.position = "none")
 
 
-# ==== Figure 4 ====
-# ---- A,B: Alluvial plot, NS1 DCd00, DCV1d01-d17, colour by DCd00, DCd01, DCd05-d17 presence and phylum----
-graphData = ASV_TableRelAb
-# select samples
-graphData = graphData[,c(1:11,which(colnames(graphData) %in% c("NS1.DCd00","NS1.DCV1d01", "NS1.DCV1d05", "NS1.DCV1d09", "NS1.DCV1d13", "NS1.DCV1d17")))]
-#order by relative abundance in NS1.DCV1 samples
-graphData = graphData[order(rowSums(graphData[,c("NS1.DCd00","NS1.DCV1d01", "NS1.DCV1d05", "NS1.DCV1d09", "NS1.DCV1d13", "NS1.DCV1d17")]),decreasing = TRUE),]
-#order by phylum
-graphData = graphData[order(graphData$BLASTphylum),]
+# ==== Figure 5 ====
+# ---- A: scatter plot, NS1 DCV1 vs DCV2 vs DCV3, all days ----
+graphData = ASV_TableRelAb[,c(1:11,grep("NS1\\.DCV.d..$",colnames(ASV_TableRelAb), fixed = FALSE))]
 
-graphData$presenceGroupColor = interaction(graphData$NS1.DCd00!=0,
-                                           graphData$NS1.DCV1d01!=0,
-                                           rowSums(graphData[,c("NS1.DCV1d05", "NS1.DCV1d09", "NS1.DCV1d13", "NS1.DCV1d17")])!=0
+graphDataMelt = melt(graphData,measure.vars = 12:ncol(graphData), variable.name = "sample")
+
+graphDataMelt = left_join(graphDataMelt,sample_Table[,c(1,5,6)], by = c("sample" = "sample_16S")) 
+graphDataMelt$vessel = paste0("Vessel ",graphDataMelt$vessel)
+
+graphDataMeltCast = dcast(graphDataMelt[,c(1,13:15)], formula = ... ~ vessel)
+
+graphData = alply(3:(ncol(graphDataMeltCast)-1), 1, function(x){
+  df = melt(graphDataMeltCast,id.vars = 1:x, measure.vars = (x+1):ncol(graphDataMeltCast))
+  df = data.frame(df[,1:2],
+                  var1 = colnames(df)[x],
+                  value1 = df[,x],
+                  var2 = df$variable,
+                  value2 = df$value)
+})
+graphData = do.call(rbind,graphData)
+
+graphData1 = graphData[graphData$value1!=0 & graphData$value2!=0,]
+graphData1 = graphData1[!is.na(graphData1$ASV_Num),]
+graphData1$group = interaction(graphData1$var1,graphData1$var2)
+
+slopes = ddply(graphData1, .(group), function(x){
+  model = lm(log10(value2)~log10(value1), data = x)
+  slope = summary(model)$coefficients[2,1]
+})
+
+rsq = ddply(graphData1, .(group), function(x){
+  model = lm(log10(value2)~log10(value1), data = x)
+  rsq = summary(model)$r.squared
+})
+
+levels(graphData1$group) =  c(paste0("slope ==",signif(slopes$V1[1],3),"*'0;'~R^2 ==", signif(rsq$V1[1],3)),
+                              paste0(""),
+                              paste0("slope ==",signif(slopes$V1[2],3),"*';'~R^2 ==", signif(rsq$V1[2],3)),
+                              paste0("slope ==",signif(slopes$V1[3],3),"*';'~R^2 ==", signif(rsq$V1[3],3))
 )
 
-#order by sample presence
-graphData = graphData[order(graphData$presenceGroupColor),]
-
-legendData1 = data.frame("day.0" = graphData$NS1.DCd00,
-                         "day.1" = graphData$NS1.DCV1d01,
-                         "days.5_17" = rowMeans(graphData[,c("NS1.DCV1d05", "NS1.DCV1d09", "NS1.DCV1d13", "NS1.DCV1d17")]))
-
-legendData = aggregate(legendData1, by = list("levelName" = graphData$presenceGroupColor), FUN = function(x) sum(x)*100)
-legendData = legendData[-1,]
-legendData = legendData[match(absencePresence3LegendData$levelName,legendData$levelName),]
-legendData$y = c(6,5,4,3,2,1,0)
-
-legendDataMelt = melt(legendData, id.vars = c(1,ncol(legendData)), variable.name = "x")
-legendDataMelt$filled = as.numeric(legendDataMelt$value>0)
-legendDataMelt$value = paste0(sprintf("%.1f",round(legendDataMelt$value,1)),"%")
-
-legendDataMelt$x = gsub(".","\n",legendDataMelt$x, fixed = TRUE)
-legendDataMelt$x = gsub("_","-",legendDataMelt$x, fixed = TRUE)
-
-Fig4A.legend = ggplot()+
-  geom_tile(data = legendDataMelt[legendDataMelt$filled == 1,],
-            color = "black",
-            size = 0.5,
-            aes(x = x, y = y, fill = levelName))+
-  geom_text(data = legendDataMelt[legendDataMelt$filled == 1,],
-            size = 5.5,
-            aes(x = x, y = y, label = value))+
-  geom_tile(data = legendDataMelt[legendDataMelt$filled == 0,],
-            color = "black",
-            fill = "white",
-            size = 0.5,
-            aes(x = x, y = y))+
-  geom_tile(data = legendDataMelt,
-            color = "black",
-            height = 0.70,
-            width = 0.70,
-            size = 0.25,
-            aes(x = "", y = y, fill = levelName))+
-  scale_x_discrete(position = "top")+   
-  scale_y_continuous(expand = expansion(add = 0.1))+
-  ggtitle("Identified on:")+
+Fig5A.base = ggplot()+
+  geom_point(data = graphData, shape = 21, aes(x = value1*100, y = value2*100, fill = factor(day_16S)))+
+  geom_smooth(data = graphData1, method = "lm", se = FALSE, aes(x = value1*100, y = value2*100, group = group, color = group))+
+  scale_x_log10(name = "Relative Abundance (%)", labels = label_scientific(digits = 1))+
+  scale_y_log10(name = "Relative Abundance (%)", labels = label_scientific(digits = 1))+
+  scale_color_discrete(name = "Linear Regression",
+                       labels = label_parse(), guide = guide_legend(order = 1))+
+  scale_fill_discrete(name = "Sample day", guide = guide_legend(order = 2, ncol=2))+
+  facet_grid(var2~var1, switch = "both")+
   coord_fixed()+
-  legend.day3.theme
+  point.theme+
+  theme(legend.background = element_blank(),
+        legend.key = element_blank(),
+        legend.title = element_text(size = 26),
+        legend.text = element_text(size = 23))
 
-#renumber ASVs based on reordering
-graphData$ASV_Num = seq_along(graphData$ASV_Num)
-graphData$ASV_Num = sprintf("%03d", graphData$ASV_Num)
+# Turn ggplots into grobs
+Fig5A_gTable = ggplotGrob(Fig5A.base)
 
-graphDataMelt = melt(graphData, measure.vars = 12:(ncol(graphData)-1), variable.name = "Sample", value.name = "Relative_Abundance", stringsAsFactors = FALSE)
+Fig5A_gTable$grobs[[4]] = nullGrob()
+Fig5A_gTable = gtable_add_grob(Fig5A_gTable, grobs = Fig5A_gTable$grobs[[22]], t = 7, l = 8)
+Fig5A_gTable$grobs[[22]] = nullGrob()
 
-graphDataMelt = graphDataMelt[graphDataMelt$Relative_Abundance!=0,]
+Fig5A_gTable = Fig5A_gTable[,-12]
 
-graphDataMelt$day_16S = sample_Table$day_16S[match(graphDataMelt$Sample,sample_Table$sample_16S)]
-#plots
-#colored by sample presence
-Fig4A.plot.alluvial.ap = ggplot() +
-  geom_stratum(data = graphDataMelt, linetype = "solid",  aes(x = factor(day_16S), stratum = ASV_Num, y = Relative_Abundance*100, fill = presenceGroupColor))+
-  geom_flow(data = graphDataMelt, color = "black",aes(x = factor(day_16S),stratum = ASV_Num, alluvium = ASV_Num, y = Relative_Abundance*100, fill = presenceGroupColor))+
-  scale_x_discrete(name = "Chemostat Culture (day)")+
-  scale_y_continuous(name = "Relative Abundance (%)")+
-  # scale_fill_manual(values = absencePresenceColors3)+
-  alluvial.theme_x1_legend0
+Fig5A.plot.gTable.point = Fig5A_gTable
 
-#colored by phylum
-Fig4B.plot.alluvial.ph = ggplot() +
-  geom_stratum(data = graphDataMelt, linetype = "solid",  aes(x = factor(day_16S), stratum = ASV_Num, y = Relative_Abundance*100, fill = BLASTphylum))+
-  geom_flow(data = graphDataMelt, color = "black",aes(x = factor(day_16S),stratum = ASV_Num, alluvium = ASV_Num, y = Relative_Abundance*100, fill = BLASTphylum))+
-  scale_x_discrete(name = "Chemostat Culture (day)")+
-  scale_y_continuous(name = "Relative Abundance (%)")+
-  scale_fill_manual(name = "Phylum", values = phylumColors)+
-  alluvial.theme_x1
+grid.newpage()
+grid.draw(Fig5A.plot.gTable.point)
 
-Fig4B.legend.gTable = get_legend(Fig4B.plot.alluvial.ph)
-Fig4B.plot.alluvial.ph = Fig4B.plot.alluvial.ph + alluvial.theme_x1_legend0
+
+
+
+
+# ---- B: PCoA plot, NS1 DCd00, DCV1-3d01-d17, colour by day, shape by source ----
+#Bray-Curtis Dissimilarity
+graphData = ASV_TableRelAb
+
+BC_dis = vegdist(t(graphData[,c("NS1.DCd00",
+                                "NS1.DCV1d01",
+                                "NS1.DCV1d05",
+                                "NS1.DCV1d09R",
+                                "NS1.DCV1d13",
+                                "NS1.DCV1d17",
+                                "NS1.DCV2d01",
+                                "NS1.DCV2d05",
+                                "NS1.DCV2d09R",
+                                "NS1.DCV2d13",
+                                "NS1.DCV2d17",
+                                "NS1.DCV3d01",
+                                "NS1.DCV3d05",
+                                "NS1.DCV3d09R",
+                                "NS1.DCV3d13",
+                                "NS1.DCV3d17")]))
+
+#PCoA
+PCoA = cmdscale(BC_dis, k = 2, eig = TRUE)
+Plot_PCoA = sample_Table %>%
+  right_join(tibble::rownames_to_column(data.frame(PCoA$points), var = "sample_16S") %>%
+               rename(PCo1 = X1,
+                      PCo2 = X2)) 
+PCoA.percentvariance = PCoA$eig/sum(PCoA$eig) *100
+
+Fig5B.plot.PCoA = ggplot()+
+  geom_point(data = Plot_PCoA, size = 3,aes(x =PCo1, y =PCo2, shape = factor(vessel), color = factor(day_16S)))+
+  scale_x_continuous(name = paste0("PCo1 (", signif(PCoA.percentvariance[1],3),"%)"))+
+  scale_y_continuous(name = paste0("PCo2 (", signif(PCoA.percentvariance[2],3),"%)"))+
+  scale_shape_manual(name = "source", values = c(15:18))+
+  scale_color_discrete(name = "day")+
+  coord_fixed()+
+  PCoA.theme
+
 
 # ---- C: scatter plot, NS1 FCd17, mean(DCV1-3d17) ----
 graphData = ASV_TableRelAb
@@ -2677,33 +3100,33 @@ legendDataMelt$value[legendDataMelt$x != "NS1.DCd00"] = ""
 
 levels(legendDataMelt$x) = sampleNameLevels.3lines[levels(legendDataMelt$x)]
 
-Fig4C.legend = ggplot()+
+Fig5C.legend = ggplot()+
   geom_tile(data = legendDataMelt[legendDataMelt$filled == 1,],
             color = "black",
             size = 0.5,
             aes(x = x, y = y, fill = levelName))+
   geom_text(data = legendDataMelt[legendDataMelt$filled == 1,],
-            size = 5,
+            size = 13,
             aes(x = x, y = y, label = value))+
   geom_tile(data = legendDataMelt[legendDataMelt$filled == 0,],
             color = "black",
             fill = "white",
             size = 0.5,
             aes(x = x, y = y))+
-  geom_tile(data = legendDataMelt,
-            color = "black",
-            height = 0.70,
-            width = 0.70,
-            size = 0.25,
-            aes(x = "", y = y, fill = levelName))+
-  scale_x_discrete(position = "top", limits = c("",levels(legendDataMelt$x)))+
+  # geom_tile(data = legendDataMelt,
+  #           color = "black",
+  #           height = 0.70,
+  #           width = 0.70,
+  #           size = 0.25,
+  #           aes(x = "", y = y, fill = levelName))+
+  scale_x_discrete(position = "top", limits = c(levels(legendDataMelt$x)))+
   scale_y_continuous(expand = expansion(add = 0.1))+
   ggtitle("Identified in:")+
   coord_fixed()+
   legend.chemostat3.theme
 
 # base plot
-Fig4C.base = ggplot()+
+Fig5C.base = ggplot()+
   geom_point(data = graphData, aes(x = NS1.FCd17*100, y = NS1.DCd17*100, color = presenceGroupColor))+
   scale_colour_discrete(guide = "none")+
   new_scale_color()+
@@ -2718,27 +3141,27 @@ Fig4C.base = ggplot()+
   coord_fixed()+
   point.theme_legendtl
 
-Fig4C_gTable = ggplotGrob(Fig4C.base)
+Fig5C_gTable = ggplotGrob(Fig5C.base)
 # add row for top histogram
-Fig4C_gTable = gtable_add_rows(Fig4C_gTable, unit(0.25, "null"), pos = 6)
+Fig5C_gTable = gtable_add_rows(Fig5C_gTable, unit(0.25, "null"), pos = 6)
 
 # add row for right histogram axis
-Fig4C_gTable = gtable_add_rows(Fig4C_gTable, unit(0, "null"), pos = 8)
+Fig5C_gTable = gtable_add_rows(Fig5C_gTable, unit(0, "null"), pos = 8)
 
 # add rows for xlab-b and space for right histogram axis title
-Fig4C_gTable = gtable_add_rows(Fig4C_gTable, unit(0.5, "grobheight",Fig4C_gTable$grobs[[12]]), pos = 10)
-Fig4C_gTable = gtable_add_rows(Fig4C_gTable, unit(0.5, "grobheight",Fig4C_gTable$grobs[[12]]), pos = 10)
+Fig5C_gTable = gtable_add_rows(Fig5C_gTable, unit(0.5, "grobheight",Fig5C_gTable$grobs[[12]]), pos = 10)
+Fig5C_gTable = gtable_add_rows(Fig5C_gTable, unit(0.5, "grobheight",Fig5C_gTable$grobs[[12]]), pos = 10)
 
 # add column for right histogram
-Fig4C_gTable = gtable_add_cols(Fig4C_gTable, unit(0.25, "null"), pos = 5)
+Fig5C_gTable = gtable_add_cols(Fig5C_gTable, unit(0.25, "null"), pos = 5)
 # add column for top histogram axis
-Fig4C_gTable = gtable_add_cols(Fig4C_gTable, unit(0, "null"), pos = 4)
+Fig5C_gTable = gtable_add_cols(Fig5C_gTable, unit(0, "null"), pos = 4)
 
-# Fig4C_gTable$heights
-# Fig4C_gTable$widths
+# Fig5C_gTable$heights
+# Fig5C_gTable$widths
 
 # histograms on t and r
-Fig4C.histt = ggplot()+
+Fig5C.histt = ggplot()+
   geom_histogram(data = graphData, position = "dodge", bins = 13, center = 0, aes(x = NS1.FCd17*100, fill = presenceGroupColor))+
   scale_x_continuous(trans=scales::pseudo_log_trans(base = 10, sigma = 0.001), breaks = c(0, 0.01, 0.1, 1, 10))+
   scale_y_continuous(trans=scales::pseudo_log_trans(base = 10, sigma = 1), breaks = c(0, 10, 25, 50, 100))+
@@ -2752,18 +3175,18 @@ Fig4C.histt = ggplot()+
         axis.line.x = element_blank(),
         axis.title.x = element_blank())
 
-Fig4C.histt_gTable = ggplotGrob(Fig4C.histt)
+Fig5C.histt_gTable = ggplotGrob(Fig5C.histt)
 
 # add top histogram
-Fig4C_gTable = gtable_add_grob(Fig4C_gTable, Fig4C.histt_gTable$grobs[[6]], t = 7, l = 6)
+Fig5C_gTable = gtable_add_grob(Fig5C_gTable, Fig5C.histt_gTable$grobs[[6]], t = 7, l = 6)
 # add top histogram axis
-Fig4C_gTable = gtable_add_grob(Fig4C_gTable, Fig4C.histt_gTable$grobs[[3]], t = 7, l = 5)
+Fig5C_gTable = gtable_add_grob(Fig5C_gTable, Fig5C.histt_gTable$grobs[[3]], t = 7, l = 5)
 # add top histogram axis title
-Fig4C_gTable = gtable_add_grob(Fig4C_gTable, Fig4C.histt_gTable$grobs[[13]], t = 7, l = 4)
+Fig5C_gTable = gtable_add_grob(Fig5C_gTable, Fig5C.histt_gTable$grobs[[13]], t = 7, l = 4)
 
-# plot(Fig4C_gTable)
+# plot(Fig5C_gTable)
 
-Fig4C.histr = ggplot()+
+Fig5C.histr = ggplot()+
   geom_histogram(data = graphData, position = "dodge", bins = 28, center = 0, aes(x = NS1.DCd17*100, fill = presenceGroupColor))+
   scale_x_continuous(trans=scales::pseudo_log_trans(base = 10, sigma = 0.001), breaks = c(0, 0.001, 0.01, 0.1, 1, 10))+
   scale_y_continuous(trans=scales::pseudo_log_trans(base = 10, sigma = 1), breaks = c(0, 10, 25, 50, 100))+
@@ -2779,134 +3202,27 @@ Fig4C.histr = ggplot()+
         axis.title.y = element_blank())
 
 
-Fig4C.histr_gTable = ggplotGrob(Fig4C.histr)
+Fig5C.histr_gTable = ggplotGrob(Fig5C.histr)
 
 # add right histogram
-Fig4C_gTable = gtable_add_grob(Fig4C_gTable, Fig4C.histr_gTable$grobs[[6]], t = 8, l = 7)
+Fig5C_gTable = gtable_add_grob(Fig5C_gTable, Fig5C.histr_gTable$grobs[[6]], t = 8, l = 7)
 # add right histogram axis
-Fig4C_gTable = gtable_add_grob(Fig4C_gTable, Fig4C.histr_gTable$grobs[[7]], t = 9, l = 7)
+Fig5C_gTable = gtable_add_grob(Fig5C_gTable, Fig5C.histr_gTable$grobs[[7]], t = 9, l = 7)
 
 # move xlab-b
-Fig4C_gTable = gtable_add_grob(Fig4C_gTable, Fig4C_gTable$grobs[[12]], t = 11, b = 12, l = 6)
-Fig4C_gTable$grobs[[12]] = nullGrob()
+Fig5C_gTable = gtable_add_grob(Fig5C_gTable, Fig5C_gTable$grobs[[12]], t = 11, b = 12, l = 6)
+Fig5C_gTable$grobs[[12]] = nullGrob()
 
 # add right histogram axis title
-Fig4C_gTable = gtable_add_grob(Fig4C_gTable, Fig4C.histr_gTable$grobs[[12]], t = 10, b = 11, l = 7)
+Fig5C_gTable = gtable_add_grob(Fig5C_gTable, Fig5C.histr_gTable$grobs[[12]], t = 10, b = 11, l = 7)
 
-Fig4C.plot.gTable.point = Fig4C_gTable
-
-grid.newpage()
-grid.draw(Fig4C.plot.gTable.point)
-
-# ---- D: PCoA plot, NS1 DCd00, DCV1-3d01-d17, colour by day, shape by source ----
-#Bray-Curtis Dissimilarity
-graphData = ASV_TableRelAb
-
-BC_dis = vegdist(t(graphData[,c("NS1.DCd00",
-                                "NS1.DCV1d01",
-                                "NS1.DCV1d05",
-                                "NS1.DCV1d09R",
-                                "NS1.DCV1d13",
-                                "NS1.DCV1d17",
-                                "NS1.DCV2d01",
-                                "NS1.DCV2d05",
-                                "NS1.DCV2d09R",
-                                "NS1.DCV2d13",
-                                "NS1.DCV2d17",
-                                "NS1.DCV3d01",
-                                "NS1.DCV3d05",
-                                "NS1.DCV3d09R",
-                                "NS1.DCV3d13",
-                                "NS1.DCV3d17")]))
-
-#PCoA
-PCoA = cmdscale(BC_dis, k = 2, eig = TRUE)
-Plot_PCoA = sample_Table %>%
-  right_join(tibble::rownames_to_column(data.frame(PCoA$points), var = "sample_16S") %>%
-               rename(PCo1 = X1,
-                      PCo2 = X2)) 
-PCoA.percentvariance = PCoA$eig/sum(PCoA$eig) *100
-
-Fig4D.plot.PCoA = ggplot()+
-  geom_point(data = Plot_PCoA, size = 3,aes(x =PCo1, y =PCo2, shape = factor(vessel), color = factor(day_16S)))+
-  scale_x_continuous(name = paste0("PCo1 (", signif(PCoA.percentvariance[1],3),"%)"))+
-  scale_y_continuous(name = paste0("PCo2 (", signif(PCoA.percentvariance[2],3),"%)"))+
-  scale_shape_manual(name = "source", values = c(15:18))+
-  scale_color_discrete(name = "day")+
-  PCoA.theme+
-  coord_fixed()
-
-
-
-# ---- E: scatter plot, NS1 DCV1d17 vs DCV2d17 vs DCV3d17 ----
-graphData = ASV_TableRelAb[,c("NS1.DCV1d17",
-                              "NS1.DCV2d17",
-                              "NS1.DCV3d17")]
-
-colnames(graphData) = c("Vessel 1",
-                        "Vessel 2",
-                        "Vessel 3")
-
-graphData = alply(1:(ncol(graphData)-1), 1, function(x){
-  df = melt(graphData,id.vars = x, measure.vars = (x+1):ncol(graphData))
-  df = data.frame(var1 = colnames(df)[1],
-                  value1 = df[,1],
-                  var2 = df$variable,
-                  value2 = df$value)
-})
-graphData = do.call(rbind,graphData)
-graphData1 = graphData[graphData$value1!=0 & graphData$value2!=0,]
-graphData1$group = interaction(graphData1$var1,graphData1$var2)
-
-slopes = ddply(graphData1, .(group), function(x){
-  model = lm(log10(value2)~log10(value1), data = x)
-  slope = summary(model)$coefficients[2,1]
-})
-
-rsq = ddply(graphData1, .(group), function(x){
-  model = lm(log10(value2)~log10(value1), data = x)
-  rsq = summary(model)$r.squared
-})
-
-levels(graphData1$group) =  c(paste0("slope ==",signif(slopes$V1[1],3),"*';'~R^2 ==", signif(rsq$V1[1],3)),
-                              paste0(""),
-                              paste0("slope ==",signif(slopes$V1[2],3),"*';'~R^2 ==", signif(rsq$V1[2],3),"*'0'"),
-                              paste0("slope ==",signif(slopes$V1[3],3),"*';'~R^2 ==", signif(rsq$V1[3],3))
-)
-
-Fig4E.base = ggplot()+
-  geom_point(data = graphData, aes(x = value1*100, y = value2*100))+
-  geom_smooth(data = graphData1, method = "lm", se = FALSE, aes(x = value1*100, y = value2*100, group = group, color = group))+
-  scale_x_log10(name = "Relative Abundance (%)", labels = label_scientific(digits = 1))+
-  scale_y_log10(name = "Relative Abundance (%)", labels = label_scientific(digits = 1))+
-  scale_color_discrete(name = "",
-                       labels = label_parse())+
-  facet_grid(var2~var1, switch = "both")+
-  coord_fixed()+
-  point.theme+
-  theme(legend.title = element_blank(),
-        legend.background = element_blank(),
-        legend.key = element_blank())
-
-
-# Turn ggplots into grobs
-Fig4E_gTable = ggplotGrob(Fig4E.base)
-
-Fig4E_gTable$grobs[[4]] = nullGrob()
-Fig4E_gTable = gtable_add_grob(Fig4E_gTable, grobs = Fig4E_gTable$grobs[[22]], t = 7, l = 8)
-Fig4E_gTable$grobs[[22]] = nullGrob()
-
-Fig4E_gTable = Fig4E_gTable[,-12]
-
-Fig4E.plot.gTable.point = Fig4E_gTable
+Fig5C.plot.gTable.point = Fig5C_gTable
 
 grid.newpage()
-grid.draw(Fig4E.plot.gTable.point)
+grid.draw(Fig5C.plot.gTable.point)
 
 
-
-
-# ==== Figure 5 ====
+# ==== Figure 6 ====
 # ---- A: NMR metabolite line plot, both FCd03-d16, facet by source, colour by metabolite ----
 graphData = NMRmetaboliteMelt
 
@@ -2928,7 +3244,7 @@ graphData$metabolite = factor(graphData$metabolite, levels = metaboliteOrder$met
 metaboliteReorder = as.vector(cbind(seq.int(1,21,3),seq.int(2,21,3),seq.int(3,21,3)))
 metaboliteReorder = metaboliteReorder[-21]
 
-Fig5A.plot.line = ggplot()+
+Fig6A.plot.line = ggplot()+
   geom_line(data = graphData, size = 1.5, aes(x = day_NMR, y = conc, group = interaction(source,type,vessel,metabolite), color = metabolite))+
   scale_x_continuous(name = "Day")+
   scale_y_log10(name = "[Metabolite] (mM)")+
@@ -2959,7 +3275,7 @@ graphDataHclust = hclust(dist(1-cor(t(graphData))), method = "complete")
 
 colBreak = max(c(abs(min(graphData)),abs(max(graphData))))
 
-Fig5B.heatplot = Heatmap(graphData,
+Fig6B.heatplot = Heatmap(graphData,
                          name = "log10(fold change) from day 2", #title of legend
                          row_title = "Metabolites", column_title = "Timepoints (day)",
                          show_column_names = TRUE,
@@ -2981,7 +3297,7 @@ Fig5B.heatplot = Heatmap(graphData,
                          )
 )
 
-Fig5B.heatplot = ComplexHeatmap::draw(object = Fig5B.heatplot, heatmap_legend_side = "top")
+Fig6B.heatplot = ComplexHeatmap::draw(object = Fig6B.heatplot, heatmap_legend_side = "top")
 
 # ---- C: MS metabolite heatmap, NS1 FCd02-d16, facet by source, colour by metabolite ----
 X_metabolites = MSmetabolite_TableFC_clean
@@ -3005,7 +3321,7 @@ graphDataHclust = hclust(dist(1-cor(t(graphData))), method = "complete")
 
 colBreak = max(c(abs(min(graphData)),abs(max(graphData))))
 
-Fig5C.heatplot = Heatmap(graphData,
+Fig6C.heatplot = Heatmap(graphData,
                          name = "log10(fold change) from day 2", #title of legend
                          row_title = "Metabolites", column_title = "Timepoints (day)",
                          show_column_names = TRUE,
@@ -3027,362 +3343,173 @@ Fig5C.heatplot = Heatmap(graphData,
                          )
 )
 
-Fig5C.heatplot = ComplexHeatmap::draw(object = Fig5C.heatplot, heatmap_legend_side = "top")
+Fig6C.heatplot = ComplexHeatmap::draw(object = Fig6C.heatplot, heatmap_legend_side = "top")
 
-# ---- D,E: NMR metabolite line plot, NS1 DCV1-3d04-d16, colour by metabolite ----
-graphData = NMRmetaboliteMelt
 
-graphData = graphData[graphData$type == "DC" & graphData$source == "NS1" & !is.na(graphData$type),]
-# only using data up to d17, after day 1
-graphData = graphData[graphData$day_NMR<=17,]
-graphData = graphData[graphData$day_NMR>1,]
+# ---- D: NMR metabolite scatter plot, NS1 DCV1 vs DCV2 vs DCV3 all days ----
+X_metabolites = NMRmetabolite_Table
 
-# capture average order of metabolites on first day in display
-metaboliteFirstOrder = ddply(graphData[graphData$day_NMR == 4,], .(metabolite), function(x){
-  mean(x$conc)
+X_metabolites = X_metabolites[X_metabolites$source == "NS1" & !is.na(X_metabolites$type) & X_metabolites$type == "DC",]
+
+X_metabolitesMelt = reshape2::melt(X_metabolites,measure.vars = 7:ncol(X_metabolites), variable.name = "metabolite")
+X_metabolitesMeltCast = dcast(X_metabolitesMelt[,3:8], formula = ... ~ vessel)
+
+colnames(X_metabolitesMeltCast)[5:7] = c("Vessel 1",
+                                         "Vessel 2",
+                                         "Vessel 3")
+
+graphData = alply(5:(ncol(X_metabolitesMeltCast)-1), 1, function(x){
+  df = melt(X_metabolitesMeltCast,id.vars = 1:x, measure.vars = (x+1):ncol(X_metabolitesMeltCast))
+  df = data.frame(df[,1:4],
+                  var1 = colnames(df)[x],
+                  value1 = df[,x],
+                  var2 = df$variable,
+                  value2 = df$value)
 })
-colnames(metaboliteFirstOrder)[2] = "mean"
-metaboliteFirstOrder = metaboliteFirstOrder[order(metaboliteFirstOrder$mean,decreasing = TRUE),]
+graphData = do.call(rbind,graphData)
 
-# split graphData by metaboliteFirstOrder
-graphData1 = graphData[graphData$metabolite %in% metaboliteFirstOrder[1:13,1],]
-graphData2 = graphData[graphData$metabolite %in% metaboliteFirstOrder[14:20,1],]
+graphData1 = graphData[graphData$value1!=0 & graphData$value2!=0,]
+graphData1$group = interaction(graphData1$var1,graphData1$var2)
 
-# capture average order of metabolites on last day in display
-metaboliteOrder1 = ddply(graphData1[graphData1$day_NMR == 16,], .(metabolite), function(x){
-  mean(x$conc)
+slopes = ddply(graphData1, .(group), function(x){
+  model = lm(log10(value2)~log10(value1), data = x)
+  slope = summary(model)$coefficients[2,1]
 })
-colnames(metaboliteOrder1)[2] = "mean"
-metaboliteOrder1 = metaboliteOrder1[order(metaboliteOrder1$mean,decreasing = TRUE),]
 
-metaboliteOrder2 = ddply(graphData2[graphData2$day_NMR == 16,], .(metabolite), function(x){
-  mean(x$conc)
+rsq = ddply(graphData1, .(group), function(x){
+  model = lm(log10(value2)~log10(value1), data = x)
+  rsq = summary(model)$r.squared
 })
-colnames(metaboliteOrder2)[2] = "mean"
-metaboliteOrder2 = metaboliteOrder2[order(metaboliteOrder2$mean,decreasing = TRUE),]
 
-# reorder levels to match mean metabolite concentrations
-graphData1$metabolite = factor(graphData1$metabolite, levels = metaboliteOrder1$metabolite)
-graphData2$metabolite = factor(graphData2$metabolite, levels = metaboliteOrder2$metabolite)
+levels(graphData1$group) =  c(paste0("slope ==",signif(slopes$V1[1],3),"*'0;'~R^2 ==", signif(rsq$V1[1],3)),
+                              paste0(""),
+                              paste0("slope ==",signif(slopes$V1[2],3),"*';'~R^2 ==", signif(rsq$V1[2],3),"*'0'"),
+                              paste0("slope ==",signif(slopes$V1[3],3),"*';'~R^2 ==", signif(rsq$V1[3],3))
+)
 
-# reorder colors to improve contrasts
-metaboliteReorder1 = as.vector(cbind(seq.int(1,14,2),seq.int(2,14,2)))
-metaboliteReorder1 = metaboliteReorder1[-14]
+Fig6D.base = ggplot()+
+  geom_point(data = graphData, shape = 21, aes(x = value1, y = value2, fill = factor(day_NMR)))+
+  geom_smooth(data = graphData1, method = "lm", se = FALSE, aes(x = value1, y = value2, group = group, color = group))+
+  scale_x_log10(name = "[metabolite] (mM)", labels = label_scientific(digits = 1))+
+  scale_y_log10(name = "[metabolite] (mM)", labels = label_scientific(digits = 1))+
+  scale_color_discrete(name = "Linear Regression",
+                       labels = label_parse())+
+  scale_fill_discrete(name = "Sample day", guide = guide_legend(ncol=2))+
+  facet_grid(var2~var1, switch = "both")+
+  coord_fixed()+
+  point.theme+
+  theme(legend.background = element_blank(),
+        legend.key = element_blank(),
+        legend.title = element_text(size = 26),
+        legend.text = element_text(size = 23)
+  )
 
-# metaboliteReorder2 = 1:7
-metaboliteReorder2 = as.vector(cbind(seq.int(1,8,2),seq.int(2,8,2)))
-metaboliteReorder2 = metaboliteReorder2[-8]
+# Turn ggplots into grobs
+Fig6D_gTable = ggplotGrob(Fig6D.base)
 
-Fig5D.plot.line = ggplot()+
-  geom_line(data = graphData1, aes(x = day_NMR, y = conc, group = interaction(source,type,vessel,metabolite), color = metabolite))+
-  scale_x_continuous(name = "day")+
-  scale_y_log10(name = "[metabolite] (mM)")+
-  scale_color_manual(values = (hue_pal()(14))[metaboliteReorder1])+
-  line.theme
+is.gtable(Fig6D_gTable$grobs[[22]])
 
-Fig5E.plot.line = ggplot()+
-  geom_line(data = graphData2, aes(x = day_NMR, y = conc, group = interaction(source,type,vessel,metabolite), color = metabolite))+
-  scale_x_continuous(name = "day")+
-  scale_y_log10(name = "[metabolite] (mM)")+
-  scale_color_manual(values = (hue_pal()(7))[metaboliteReorder2])+
-  line.theme
+Fig6D_gTable$grobs[[4]] = nullGrob()
 
+# Fig6a_gTable$grobs[[4]] = Fig6a_gTable$grobs[[22]][2:6,2:4]
 
+Fig6D_gTable = gtable_add_grob(Fig6D_gTable, grobs = Fig6D_gTable$grobs[[22]], 
+                               t = 7, l = 8,
+                               b = 7, r = 8,
+                               name = "new_guide_box")
 
+Fig6D_gTable$grobs[[22]] = nullGrob()
 
+Fig6D_gTable = Fig6D_gTable[,-12]
 
+Fig6D.plot.gTable.point = Fig6D_gTable
 
+grid.newpage()
+grid.draw(Fig6D.plot.gTable.point)
 
-
-
-
-# ---- F: MS metabolite heatmap, NS1 DCd03-d17, facet by source, colour by metabolite ----
+# ---- E: MS metabolite scatter plot, NS1 DCV1 vs DCV2 vs DCV3 all days ----
 X_metabolites = MSmetabolite_TableDC_clean
 # X_metabolites = MSmetabolite_TableDC_clean_Zscore
 
 X_metabolites = X_metabolites[X_metabolites$source == "NS1" & !is.na(X_metabolites$type),]
 X_metabolites = X_metabolites[X_metabolites$day_MS<=17,]
-X_metabolites = X_metabolites[X_metabolites$day_MS>1,]
+# X_metabolites = X_metabolites[X_metabolites$day_MS>1,]
 
-# average the vessels
-X_metabolites = ddply(X_metabolites,.(day_MS), function(x){
-  df = c(sample_MSMetabolites = paste0(x$source[1],x$type[1],"d",sprintf("%02d",x$day_MS[1])),x[1,2:7],colMeans(x[,8:ncol(x)]))
-  df = data.frame(df)
+X_metabolitesMelt = reshape2::melt(X_metabolites,measure.vars = 8:ncol(X_metabolites), variable.name = "metabolite")
+X_metabolitesMeltCast = dcast(X_metabolitesMelt[,4:9], formula = ... ~ vessel)
+
+colnames(X_metabolitesMeltCast)[5:7] = c("Vessel 1",
+                                         "Vessel 2",
+                                         "Vessel 3")
+
+graphData = alply(5:(ncol(X_metabolitesMeltCast)-1), 1, function(x){
+  df = melt(X_metabolitesMeltCast,id.vars = 1:x, measure.vars = (x+1):ncol(X_metabolitesMeltCast))
+  df = data.frame(df[,1:4],
+                  var1 = colnames(df)[x],
+                  value1 = df[,x],
+                  var2 = df$variable,
+                  value2 = df$value)
+})
+graphData = do.call(rbind,graphData)
+
+graphData1 = graphData[graphData$value1!=0 & graphData$value2!=0,]
+graphData1$group = interaction(graphData1$var1,graphData1$var2)
+
+slopes = ddply(graphData1, .(group), function(x){
+  model = lm(log10(value2)~log10(value1), data = x)
+  slope = summary(model)$coefficients[2,1]
 })
 
-graphData = X_metabolites[,8:ncol(X_metabolites)]
-graphData = do.call(rbind,apply(graphData,1,function(x) x/graphData[1,]))
-graphData = log10(graphData)
-graphData = t(graphData)
-colnames(graphData) = X_metabolites$sample_MSMetabolites
-graphData = graphData[apply(graphData,1,function(x) !any(is.nan(x))),]
-# graphData = graphData[apply(graphData,1,function(x) sd(x)!=0),]
-graphData = graphData[apply(graphData,1,function(x) !any(is.infinite(x))),]
-colnames(graphData) = X_metabolites$day_MS
+rsq = ddply(graphData1, .(group), function(x){
+  model = lm(log10(value2)~log10(value1), data = x)
+  rsq = summary(model)$r.squared
+})
 
-graphDataHclust = hclust(dist(1-cor(t(graphData))), method = "complete")
-
-colBreak = max(c(abs(min(graphData)),abs(max(graphData))))
-
-Fig5F.heatplot = Heatmap(graphData,
-                         name = "log10(fold change) from day 3", #title of legend
-                         row_title = "Metabolites", column_title = "Timepoints (day)",
-                         show_column_names = TRUE,
-                         show_row_names = TRUE,
-                         row_names_gp = gpar(fontsize = 10), # Text size for row names
-                         column_title_side = c("bottom"),                          
-                         column_names_gp = gpar(fontsize = 15), # Text size for column names                          
-                         column_names_rot = 0, # column names rotation
-                         clustering_method_rows = "complete",
-                         cluster_columns = FALSE,
-                         row_km = 6,
-                         show_parent_dend_line = FALSE,
-                         column_gap = unit(0.005, "npc"),
-                         col = circlize::colorRamp2(breaks = c(-colBreak,0,colBreak),
-                                                    colors = c("#4575B4", "#FFFFBF", "#D73027")),
-                         heatmap_legend_param = list(
-                           legend_width = unit(12, "cm"),
-                           direction = "horizontal"
-                         )
+levels(graphData1$group) =  c(paste0("slope ==",signif(slopes$V1[1],3),"*';'~R^2 ==", signif(rsq$V1[1],3)),
+                              paste0(""),
+                              paste0("slope ==",signif(slopes$V1[2],3),"*';'~R^2 ==", signif(rsq$V1[2],3)),
+                              paste0("slope ==",signif(slopes$V1[3],3),"*'.004;'~R^2 ==", signif(rsq$V1[3],3),"*'0'")
 )
 
-Fig5F.heatplot = ComplexHeatmap::draw(object = Fig5F.heatplot, heatmap_legend_side = "top")
+Fig6E.base = ggplot()+
+  geom_point(data = graphData, shape = 21, aes(x = value1, y = value2, fill = factor(day_MS)))+
+  geom_smooth(data = graphData1, method = "lm", se = FALSE, aes(x = value1, y = value2, group = group, color = group))+
+  scale_x_log10(name = "Arbitrary Units", labels = label_scientific(digits = 1))+
+  scale_y_log10(name = "Arbitrary Units", labels = label_scientific(digits = 1))+
+  scale_color_discrete(name = "Linear Regression",
+                       labels = label_parse())+
+  scale_fill_discrete(name = "Sample day", guide = guide_legend(ncol=2))+
+  facet_grid(var2~var1, switch = "both")+
+  coord_fixed()+
+  point.theme+
+  theme(legend.background = element_blank(),
+        legend.key = element_blank(),
+        legend.title = element_text(size = 26),
+        legend.text = element_text(size = 23)
+        )
 
+# Turn ggplots into grobs
+Fig6E_gTable = ggplotGrob(Fig6E.base)
 
+is.gtable(Fig6E_gTable$grobs[[22]])
 
+Fig6E_gTable$grobs[[4]] = nullGrob()
 
+# Fig6_gTable$grobs[[4]] = Fig6_gTable$grobs[[22]][2:6,2:4]
 
-# ==== Figure 6 ====
-# ---- A: heatmap of ASV vs NMR metabolite correlations, NS1DCV1-3d05-d17, without d1 ----
-X_16S = data.frame(t(ASV_TableRelAb[,12:(sampleNum+12-1)])) %>% tibble::rownames_to_column(var = "sample_16S")
-colnames(X_16S)[2:ncol(X_16S)] = ASV_TableRelAb$ASV_Num
+Fig6E_gTable = gtable_add_grob(Fig6E_gTable, grobs = Fig6E_gTable$grobs[[22]], 
+                              t = 7, l = 8,
+                              b = 7, r = 8,
+                              name = "new_guide_box")
 
-X_16S = X_16S[grep("NS1.DC", X_16S$sample_16S, fixed = TRUE),]
+Fig6E_gTable$grobs[[22]] = nullGrob()
 
-# remove d01
-X_16S = X_16S[!grepl("d01", X_16S$sample_16S, fixed = TRUE),]
-# remove >d17
-X_16S = X_16S[substr(X_16S$sample_16S, nchar(X_16S$sample_16S)-1,nchar(X_16S$sample_16S))<=17,]
+Fig6E_gTable = Fig6E_gTable[,-12]
 
-X_metabolites = semi_join(NMRmetabolite_Table,X_16S, by = c(sample_16S = "sample_16S"))
-X_16S = semi_join(X_16S,NMRmetabolite_Table, by = c(sample_16S = "sample_16S"))
-X_16S = X_16S[,c(1,which(colSums(X_16S[2:ncol(X_16S)])!=0)+1)]
-X_16S = X_16S[,colSums(X_16S != 0)>1]
+Fig6E.plot.gTable.point = Fig6E_gTable
 
-X_metabolites = X_metabolites[match(X_16S$sample_16S,X_metabolites$sample_16S),]
-
-cortest = cor(X_metabolites[,7:26],X_16S[,2:ncol(X_16S)])
-colnames(cortest) = ASV_TableRelAb$BLASTmatch[match(colnames(cortest),ASV_TableRelAb$ASV_Num)]
-
-Fig6A.heatplot = Heatmap(cortest, 
-                         name = "ASVs vs. Metabolites", #title of legend
-                         row_title = "Metabolites", column_title = "ASVs",
-                         show_column_names = FALSE,
-                         show_row_names = TRUE,
-                         row_names_gp = gpar(fontsize = 15), # Text size for row names
-                         column_names_gp = gpar(fontsize = 3), # Text size for column names
-                         clustering_method_rows = "complete", clustering_method_columns = "complete",
-                         row_km = 1, column_km = 6,
-                         show_parent_dend_line = FALSE,
-                         column_gap = unit(0.005, "npc"),
-                         col = circlize::colorRamp2(breaks = c(-1,0,1),
-                                                    colors = c("#4575B4", "#FFFFBF", "#D73027")),
-                         heatmap_legend_param = list(
-                           legend_width = unit(12, "cm"),
-                           direction = "horizontal"
-                         )
-)
-
-Fig6A.heatplot = ComplexHeatmap::draw(object = Fig6A.heatplot, heatmap_legend_side = "top")
-
-# ---- B: heatmap of ASV vs MS metabolite correlations, NS1DCV1-3d05-d17, without d1 ----
-X_16S = data.frame(t(ASV_TableRelAb[,12:(sampleNum+12-1)])) %>% tibble::rownames_to_column(var = "sample_16S")
-colnames(X_16S)[2:ncol(X_16S)] = ASV_TableRelAb$ASV_Num
-
-X_16S = X_16S[grep("NS1.DC", X_16S$sample_16S, fixed = TRUE),]
-
-# remove d00 and d01
-X_16S = X_16S[!grepl("d00", X_16S$sample_16S, fixed = TRUE),]
-X_16S = X_16S[!grepl("d01", X_16S$sample_16S, fixed = TRUE),]
-# remove >d17
-X_16S = X_16S[substr(X_16S$sample_16S, nchar(X_16S$sample_16S)-1,nchar(X_16S$sample_16S))<=17,]
-
-X_metabolites = semi_join(MSmetabolite_TableDC_clean,X_16S, by = c(sample_16S = "sample_16S"))
-X_16S = semi_join(X_16S,MSmetabolite_TableDC_clean, by = c(sample_16S = "sample_16S"))
-X_16S = X_16S[,c(1,which(colSums(X_16S[2:ncol(X_16S)])!=0)+1)]
-X_16S = X_16S[,colSums(X_16S != 0)>1]
-
-X_metabolites = X_metabolites[match(X_16S$sample_16S,X_metabolites$sample_16S),]
-X_metabolites[,8:ncol(X_metabolites)] = scale(X_metabolites[,8:ncol(X_metabolites)])
-
-X_metabolites = cbind(X_metabolites[,1:7],X_metabolites[,8:ncol(X_metabolites)][,apply(X_metabolites[,8:ncol(X_metabolites)],2,function(x) !any(is.nan(x)))])
-
-cortest = cor(X_metabolites[,8:ncol(X_metabolites)],X_16S[,2:ncol(X_16S)])
-colnames(cortest) = ASV_TableRelAb$BLASTmatch[match(colnames(cortest),ASV_TableRelAb$ASV_Num)]
-
-Fig6B.heatplot = Heatmap(cortest, 
-                         name = "ASVs vs. Metabolites", #title of legend
-                         row_title = "Metabolites", column_title = "ASVs",
-                         show_column_names = FALSE,
-                         show_row_names = TRUE,
-                         row_names_gp = gpar(fontsize = 10), # Text size for row names
-                         column_names_gp = gpar(fontsize = 3), # Text size for column names
-                         clustering_method_rows = "complete", clustering_method_columns = "complete",
-                         row_km = 1, column_km = 6,
-                         show_parent_dend_line = FALSE,
-                         column_gap = unit(0.005, "npc"),
-                         col = circlize::colorRamp2(breaks = c(-1,0,1),
-                                                    colors = c("#4575B4", "#FFFFBF", "#D73027")),
-                         heatmap_legend_param = list(
-                           legend_width = unit(12, "cm"),
-                           direction = "horizontal"
-                         )
-)
-
-Fig6B.heatplot = ComplexHeatmap::draw(object = Fig6B.heatplot, heatmap_legend_side = "top")
-
-# ---- C,D: scatter plot of selected ASV vs NMR metabolite correlations, NS1 ----
-X_16S = data.frame(t(ASV_TableRelAb[,12:(sampleNum+12-1)])) %>% tibble::rownames_to_column(var = "sample_16S")
-colnames(X_16S)[2:ncol(X_16S)] = ASV_TableRelAb$ASV_Num
-
-X_16S = X_16S[grep("NS1.DC", X_16S$sample_16S, fixed = TRUE),]
-
-# remove d01
-X_16S = X_16S[!grepl("d01", X_16S$sample_16S, fixed = TRUE),]
-# remove >d17
-X_16S = X_16S[substr(X_16S$sample_16S, nchar(X_16S$sample_16S)-1,nchar(X_16S$sample_16S))<=17,]
-
-X_metabolites = semi_join(NMRmetabolite_Table,X_16S, by = c(sample_16S = "sample_16S"))
-X_16S = semi_join(X_16S,NMRmetabolite_Table, by = c(sample_16S = "sample_16S"))
-X_16S = X_16S[,c(1,which(colSums(X_16S[2:ncol(X_16S)])!=0)+1)]
-
-X_metabolites = X_metabolites[match(X_16S$sample_16S,X_metabolites$sample_16S),]
-
-cortest = cor(X_metabolites[,7:26],X_16S[,2:ncol(X_16S)])
-cortestMelt = melt(cortest)
-cortestMelt$abundance = apply(X_16S[,2:ncol(X_16S)], 2, function(x) sum(x))[cortestMelt$Var2]
-cortestMelt$conc = apply(X_metabolites[,7:ncol(X_metabolites)], 2, function(x) sum(x))[cortestMelt$Var1]
-cortestMelt$abundanceVar = apply(X_16S[,2:ncol(X_16S)], 2, function(x) sd(x))[cortestMelt$Var2]
-cortestMelt$concVar = apply(X_metabolites[,7:ncol(X_metabolites)], 2, function(x) sd(x))[cortestMelt$Var1]
-cortestMelt$metric = cortestMelt$value * cortestMelt$abundanceVar * cortestMelt$concVar
-# cortestMelt$metric = cortestMelt$value * cortestMelt$abundanceVar
-
-graphData1 = data.frame(correlation = "positive", ASV = "ASV_008", X_16S = X_16S$ASV_008*100, metabolite = "Acetate", X_metabolites = X_metabolites$Acetate)
-graphData2 = data.frame(correlation = "negative", ASV = "ASV_002", X_16S = X_16S$ASV_002*100, metabolite = "Acetate", X_metabolites = X_metabolites$Acetate)
-graphData = rbind(graphData1,graphData2)
-
-slope1 = summary(lm(X_metabolites~X_16S, data = graphData1))$coefficients[2,1]
-rsq1 = summary(lm(X_metabolites~X_16S, data = graphData1))$r.squared
-
-graphData1$label = paste0("slope ==",signif(slope1,3),"*';'~R^2 ==", signif(rsq1,3))
-
-slope2 = summary(lm(X_metabolites~X_16S, data = graphData2))$coefficients[2,1]
-rsq2 = summary(lm(X_metabolites~X_16S, data = graphData2))$r.squared
-
-graphData2$label = paste0("slope ==",signif(slope2,3),"*';'~R^2 ==", signif(rsq2,3))
-
-
-# Fig6C.plot = ggplot()+
-#   geom_point(data = graphData, aes(x = X_16S, y = X_metabolites, color = ASV))+
-#   facet_wrap(~correlation, scales = "free")
-
-Fig6C.plot.point = ggplot()+
-  geom_point(data = graphData1, size = 5, aes(x = X_16S, y = X_metabolites))+
-  xlab(bquote(atop(italic(.(ASV_TableRelAb$BLASTspecies[ASV_TableRelAb$ASV_Num==graphData1$ASV[1]])),"% relative abundance")))+
-  ylab(paste0("[",graphData1$metabolite[1],"]"," (mM)"))+
-  new_scale_color()+
-  geom_smooth(data = graphData1, method = "lm", se = FALSE, aes(x = X_16S, y = X_metabolites, color = label))+
-  scale_colour_discrete(name = "",
-                        labels = label_parse())+
-  point.select.theme_legendtl
-
-Fig6D.plot.point = ggplot()+
-  geom_point(data = graphData2, size = 5, aes(x = X_16S, y = X_metabolites))+   
-  xlab(bquote(atop(italic(.(ASV_TableRelAb$BLASTspecies[ASV_TableRelAb$ASV_Num==graphData2$ASV[1]])),"\n% relative abundance")))+   
-  ylab(paste0("[",graphData2$metabolite[1],"]"," (mM)"))+
-  new_scale_color()+
-  geom_smooth(data = graphData2, method = "lm", se = FALSE, aes(x = X_16S, y = X_metabolites, color = label))+
-  scale_colour_discrete(name = "",
-                        labels = label_parse())+
-  point.select.theme_legendtr
-
-# ---- E,F: scatter plot of selected ASV vs MS metabolite correlations, NS1 ----
-X_16S = data.frame(t(ASV_TableRelAb[,12:(sampleNum+12-1)])) %>% tibble::rownames_to_column(var = "sample_16S")
-colnames(X_16S)[2:ncol(X_16S)] = ASV_TableRelAb$ASV_Num
-
-X_16S = X_16S[grep("NS1.DC", X_16S$sample_16S, fixed = TRUE),]
-
-# remove d00 and d01
-X_16S = X_16S[!grepl("d00", X_16S$sample_16S, fixed = TRUE),]
-X_16S = X_16S[!grepl("d01", X_16S$sample_16S, fixed = TRUE),]
-# remove >d17
-X_16S = X_16S[substr(X_16S$sample_16S, nchar(X_16S$sample_16S)-1,nchar(X_16S$sample_16S))<=17,]
-
-X_metabolites = semi_join(MSmetabolite_TableDC_clean,X_16S, by = c(sample_16S = "sample_16S"))
-X_16S = semi_join(X_16S,MSmetabolite_TableDC_clean, by = c(sample_16S = "sample_16S"))
-X_16S = X_16S[,c(1,which(colSums(X_16S[2:ncol(X_16S)])!=0)+1)]
-
-X_metabolites = X_metabolites[match(X_16S$sample_16S,X_metabolites$sample_16S),]
-X_metabolites[,8:ncol(X_metabolites)] = scale(X_metabolites[,8:ncol(X_metabolites)])
-
-X_metabolites = cbind(X_metabolites[,1:7],X_metabolites[,8:ncol(X_metabolites)][,apply(X_metabolites[,8:ncol(X_metabolites)],2,function(x) !any(is.nan(x)))])
-
-cortest = cor(X_metabolites[,8:ncol(X_metabolites)],X_16S[,2:ncol(X_16S)])
-cortestMelt = melt(cortest)
-cortestMelt$abundance = apply(X_16S[,2:ncol(X_16S)], 2, function(x) sum(x))[cortestMelt$Var2]
-cortestMelt$conc = apply(X_metabolites[,8:ncol(X_metabolites)], 2, function(x) sum(x))[cortestMelt$Var1]
-cortestMelt$abundanceVar = apply(X_16S[,2:ncol(X_16S)], 2, function(x) sd(x))[cortestMelt$Var2]
-cortestMelt$concVar = apply(X_metabolites[,8:ncol(X_metabolites)], 2, function(x) sd(x))[cortestMelt$Var1]
-cortestMelt$metric = cortestMelt$value * cortestMelt$abundanceVar * cortestMelt$concVar
-# cortestMelt$metric = cortestMelt$value * cortestMelt$abundanceVar
-
-graphData1 = data.frame(correlation = "positive", ASV = "ASV_008", X_16S = X_16S$ASV_008*100, metabolite = "Succinate", X_metabolites = X_metabolites$Succinate)
-graphData2 = data.frame(correlation = "negative", ASV = "ASV_008", X_16S = X_16S$ASV_008*100, metabolite = "Glutarate", X_metabolites = X_metabolites$Glutarate)
-graphData = rbind(graphData1,graphData2)
-
-slope1 = summary(lm(X_metabolites~X_16S, data = graphData1))$coefficients[2,1]
-rsq1 = summary(lm(X_metabolites~X_16S, data = graphData1))$r.squared
-
-graphData1$label = paste0("slope ==",signif(slope1,3),"*';'~R^2 ==", signif(rsq1,3))
-
-slope2 = summary(lm(X_metabolites~X_16S, data = graphData2))$coefficients[2,1]
-rsq2 = summary(lm(X_metabolites~X_16S, data = graphData2))$r.squared
-
-graphData2$label = paste0("slope ==",signif(slope2,3),"*';'~R^2 ==", signif(rsq2,3))
-
-# Fig6D.plot = ggplot()+
-#   geom_point(data = graphData, aes(x = X_16S, y = X_metabolites, color = ASV))+
-#   facet_wrap(~correlation, scales = "free")
-
-Fig6E.plot.point = ggplot()+
-  geom_point(data = graphData1, size = 5, aes(x = X_16S, y = X_metabolites))+
-  xlab(bquote(atop(italic(.(ASV_TableRelAb$BLASTspecies[ASV_TableRelAb$ASV_Num==graphData1$ASV[1]])),"\n% relative abundance")))+   
-  ylab(paste0(graphData1$metabolite[1]," (arb. unit)"))+
-  new_scale_color()+
-  geom_smooth(data = graphData1, method = "lm", se = FALSE, aes(x = X_16S, y = X_metabolites, color = label))+
-  scale_colour_discrete(name = "",
-                        labels = label_parse())+
-  point.select.theme_legendtl
-
-Fig6F.plot.point = ggplot()+
-  geom_point(data = graphData2, size = 5, aes(x = X_16S, y = X_metabolites))+   
-  xlab(bquote(atop(italic(.(ASV_TableRelAb$BLASTspecies[ASV_TableRelAb$ASV_Num==graphData2$ASV[1]])),"\n% relative abundance")))+   
-  ylab(paste0(graphData2$metabolite[1]," (arb. unit)"))+
-  new_scale_color()+
-  geom_smooth(data = graphData2, method = "lm", se = FALSE, aes(x = X_16S, y = X_metabolites, color = label))+
-  scale_colour_discrete(name = "",
-                        labels = label_parse())+
-  point.select.theme_legendtr
-
-# 
-# Fig6D1.plot = ggplot()+
-#   geom_point(aes(x = X_16S$ASV_008, y = X_metabolites$SUCCINATE))
-# 
-# Fig6D2.plot = ggplot()+
-#   geom_point(aes(x = X_16S$ASV_008, y = X_metabolites$GLUTARATE))
-
-
-
+grid.newpage()
+grid.draw(Fig6E.plot.gTable.point)
 
 #==== save plots ====
 #save all .plot.alluvial.ap PDF files to ./Figure Outputs
@@ -3500,3 +3627,18 @@ a_ply(ls()[grepl(".histogram",ls(),fixed = TRUE)],1,function(x){
   grid.draw(eval(parse(text = x)))
   dev.off()
 })
+
+# write.table(CHILD_mergedASV_Table_SpeciesCol[,1:12],file = paste0(path,"Figure Outputs/",newDir,"/","NS0_NS1_isolates speciesCol.txt"), sep = "\t")
+
+
+#save all graphDataList files to ./Figure Outputs
+# a_ply(names(graphDataList),1,function(x){
+#   grid.newpage()
+#   cairo_pdf(filename = paste0(path,"Figure Outputs/",newDir,"/",x,".pdf"),
+#             width = 10, height = 10,
+#             bg = "transparent")
+#   grid.draw(graphDataList[[x]][[1]])
+#   dev.off()
+# })
+# 
+
